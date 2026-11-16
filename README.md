@@ -45,9 +45,8 @@ Then open the printed URL (usually **http://localhost:5173**).
   `npm run dev -- --host`, and open `http://<your-PC-IP>:5173` in the phone's
   browser (find your PC's IP with `ipconfig` → "IPv4 Address").
 
-Log in with a magic link. The demo business is owned by `demo@mur.systems` —
-if you log in with a different email, tell me your login email and I'll point
-the demo business at it.
+Log in with a magic link using `mursystems123@gmail.com` — the demo business
+is owned by that address, so you'll see the demo customers right away.
 
 ## Auth email (dev vs production)
 

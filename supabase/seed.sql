@@ -12,7 +12,7 @@
 
 -- Demo owner. Log in locally via magic link to demo@mur.systems.
 insert into auth.users (id, email, email_confirmed_at) values
-  ('11111111-1111-1111-1111-111111111111', 'demo@mur.systems', now())
+  ('11111111-1111-1111-1111-111111111111', 'mursystems123@gmail.com', now())
 on conflict (id) do nothing;
 
 insert into public.businesses (id, name, place_id, timezone, send_mode, status, owner_id) values

@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "mur-reviews-links",
+  "name": "m",
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "vars": {

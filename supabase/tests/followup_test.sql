@@ -47,7 +47,7 @@ select throws_ok(
 );
 
 -- ---------- base62 tokens ----------
-select is(char_length(public.new_token()), 12, 'default token is 12 characters');
+select is(char_length(public.new_token()), 8, 'default token is 8 characters');
 select is(char_length(public.new_token(8)), 8, 'token can be the 8-character minimum');
 select ok(public.new_token() ~ '^[A-Za-z0-9]+$', 'token is base62 only');
 

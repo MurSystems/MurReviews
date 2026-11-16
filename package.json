@@ -1,0 +1,12 @@
+{
+  "name": "mur-reviews",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Reviews by Mur Systems — multi-tenant Google-review request app",
+  "scripts": {
+    "test:db": "node scripts/run_tests.cjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}

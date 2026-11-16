@@ -3,8 +3,9 @@
 Multi-tenant app that lets local businesses collect more Google reviews by
 texting customers a review link after a job. Operated by Mur Systems.
 
-**Status: Stage 1 complete** — data model, row-level security, and RLS tests.
-See [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
+**Status: Stage 2 complete** — auth (magic link), owner app shell, and the
+add-customer flow (log-only sender). Stage 1 (schema, RLS, queue, tests) is in
+`supabase/`. See [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
 
 ## Stack (target)
 
@@ -16,6 +17,7 @@ See [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
 ## Layout
 
 ```
+frontend/       # owner app (React + Vite, mobile-first PWA)
 supabase/
   migrations/   # schema + RLS (ordered SQL)
   tests/        # pgTAP RLS tests
@@ -23,6 +25,41 @@ supabase/
 scripts/        # Node test runner (Docker-free)
 docs/           # data model + runbooks
 ```
+
+## Run the owner app
+
+The frontend reads `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` from
+`frontend/.env` (already filled for this project; copy `.env.example` for a
+fresh checkout).
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Then open the printed URL (usually **http://localhost:5173**).
+
+- **On your PC:** open that URL in a browser.
+- **On your phone:** make sure the phone is on the same Wi-Fi, then run
+  `npm run dev -- --host`, and open `http://<your-PC-IP>:5173` in the phone's
+  browser (find your PC's IP with `ipconfig` → "IPv4 Address").
+
+Log in with a magic link. The demo business is owned by `demo@mur.systems` —
+if you log in with a different email, tell me your login email and I'll point
+the demo business at it.
+
+## Auth email (dev vs production)
+
+Supabase's built-in email sender is limited to **2 auth emails/hour**,
+project-wide, and only to addresses that are **members of your Supabase
+organisation** — fine for you logging in during development, but not for real
+clients.
+
+Before onboarding real clients you'll need **custom SMTP** (a free provider is
+fine), which raises the limit to 30/hour (adjustable in Auth → Rate Limits)
+and lets you send to any address. Not set up yet. See Supabase's
+[Auth SMTP guide](https://supabase.com/docs/guides/auth/auth-smtp).
 
 ## Run the DB tests
 

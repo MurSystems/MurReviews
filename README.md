@@ -3,10 +3,13 @@
 Multi-tenant app that lets local businesses collect more Google reviews by
 texting customers a review link after a job. Operated by Mur Systems.
 
-**Status: Stage 3 complete** — queue, delay, quiet hours, reminder logic, and
-the send allowlist, all with tests. Stages 1 (schema + RLS + queue) and 2
-(auth + owner app shell + add-customer) are also in. See
-[`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
+**Status: Stage 4 complete** — short links, click tracking, and the opt-out
+page (Cloudflare Worker). Stages 1–3 (schema + RLS, owner app, queue/reminders)
+are also in. See [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
+
+Review/opt-out links live at
+**https://mur-reviews-links.mursystems123.workers.dev** (see `LINK_DOMAIN` in
+`.env.example` — swap for a custom short domain later).
 
 ## Stack (target)
 

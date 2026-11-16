@@ -1,0 +1,3 @@
+# Local-dev secrets (copy to .dev.vars — never commit .dev.vars).
+# Set the real value via `wrangler secret put SUPABASE_SERVICE_ROLE_KEY` for deploy.
+SUPABASE_SERVICE_ROLE_KEY=

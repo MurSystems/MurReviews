@@ -10,10 +10,12 @@
 --     (Verified by supabase/tests/seed_safety_test.sql.)
 -- ============================================================================
 
--- Demo owner. Log in locally via magic link to demo@mur.systems.
+-- Demo owner (also an admin) — log in with mursystems123@gmail.com.
 insert into auth.users (id, email, email_confirmed_at) values
   ('11111111-1111-1111-1111-111111111111', 'mursystems123@gmail.com', now())
 on conflict (id) do nothing;
+
+update public.profiles set role = 'admin' where id = '11111111-1111-1111-1111-111111111111';
 
 insert into public.businesses (id, name, place_id, timezone, send_mode, status, owner_id) values
   ('22222222-2222-2222-2222-222222222222', 'Demo Cafe', 'ChIJdemo0000000000000000', 'Australia/Melbourne', 'demo', 'active', '11111111-1111-1111-1111-111111111111')

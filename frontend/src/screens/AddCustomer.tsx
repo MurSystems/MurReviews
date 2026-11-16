@@ -13,6 +13,7 @@ const OUTCOME: Record<string, string> = {
 
 export default function AddCustomer() {
   const [businessId, setBusinessId] = useState<string | null>(null);
+  const [loadingBusiness, setLoadingBusiness] = useState(true);
   const [firstName, setFirstName] = useState('');
   const [mobile, setMobile] = useState('');
   const [result, setResult] = useState<string | null>(null);
@@ -20,20 +21,29 @@ export default function AddCustomer() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    supabase
-      .from('businesses')
-      .select('id')
-      .limit(1)
-      .single()
-      .then(({ data }) => setBusinessId(data?.id ?? null));
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('businesses')
+          .select('id')
+          .limit(1)
+          .single();
+        if (!cancelled) setBusinessId(data?.id ?? null);
+      } catch {
+        if (!cancelled) setBusinessId(null);
+      } finally {
+        if (!cancelled) setLoadingBusiness(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (!businessId) {
-      setError('No business found for this account.');
-      return;
-    }
+    if (!businessId) return;
     setBusy(true);
     setError('');
     setResult(null);
@@ -53,6 +63,18 @@ export default function AddCustomer() {
       setFirstName('');
       setMobile('');
     }
+  }
+
+  if (loadingBusiness) {
+    return <div className="center muted">Loading…</div>;
+  }
+
+  if (!businessId) {
+    return (
+      <div className="center warn">
+        No business found for this account. Ask your admin to link one.
+      </div>
+    );
   }
 
   return (

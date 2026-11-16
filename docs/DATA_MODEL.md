@@ -71,6 +71,21 @@ Marks any `sending` message whose `updated_at` is older than `stale_after`
 (default 10 minutes) as `failed` with `retryable = false` (never auto-resent).
 `EXECUTE` revoked from `public`, granted to `service_role`.
 
+### `send_allowed(mode, mobile, is_production, allowlist)` — send allowlist
+Pure rule the Worker (stage 5) calls before sending: allow if `is_production`,
+or the mode is `log_only`, or the mobile is in the allowlist. In non-production
+every real sender refuses numbers not on the `SEND_ALLOWLIST` env var.
+
+### `cancel_dev_messages()` — service-role only
+One-time pre-go-live cleanup: marks every `queued`/`sending` message `failed`
+with `retryable = false` and `last_error = 'cancelled before go-live'`, and
+returns the count.
+
+### `reset_number(business_id, mobile)` — admin only
+Deletes a number's entire request history (all messages) so it can be re-added
+(the 90-day rule no longer blocks it). Raises `42501` for non-admins. Never
+touches `opt_outs`.
+
 Trial cap is enforced in `add_customer` (a trial business at `trial_text_cap`
 returns `capped` and queues nothing). The claim function only respects paused
 status; cap enforcement lives at queue time so it cannot race a multi-row

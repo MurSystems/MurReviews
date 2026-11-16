@@ -3,9 +3,10 @@
 Multi-tenant app that lets local businesses collect more Google reviews by
 texting customers a review link after a job. Operated by Mur Systems.
 
-**Status: Stage 2 complete** — auth (magic link), owner app shell, and the
-add-customer flow (log-only sender). Stage 1 (schema, RLS, queue, tests) is in
-`supabase/`. See [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
+**Status: Stage 3 complete** — queue, delay, quiet hours, reminder logic, and
+the send allowlist, all with tests. Stages 1 (schema + RLS + queue) and 2
+(auth + owner app shell + add-customer) are also in. See
+[`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
 
 ## Stack (target)
 

@@ -3,7 +3,7 @@
 -- ============================================================================
 
 create extension if not exists pgtap with schema extensions;
-select plan(12);
+select plan(15);
 
 -- ---------- fixtures ----------
 insert into auth.users (id, email) values
@@ -29,10 +29,13 @@ insert into public.opt_outs (business_id, mobile) values
   ('00000000-0000-0000-0000-0000000000a2', '+61491570110');
 
 -- ---------- 1. send allowlist ----------
-select ok(public.send_allowed('log_only', '+61499999999', false, array[]::text[]), 'log_only is always allowed');
-select ok(public.send_allowed('demo', '+61499999999', true, array[]::text[]), 'production allows any number');
-select ok(public.send_allowed('demo', '+61491570006', false, array['+61491570006']), 'allowlisted number is allowed');
-select ok(not public.send_allowed('demo', '+61499999999', false, array[]::text[]), 'non-production sender rejects an unlisted number');
+select ok(public.send_allowed('log_only', '+61499999999', null, array[]::text[]), 'log_only is always allowed');
+select ok(public.send_allowed('demo', '+61499999999', 'true', array[]::text[]), 'production (exact "true") allows any number');
+select ok(public.send_allowed('demo', '+61491570006', 'false', array['+61491570006']), 'allowlisted number is allowed');
+select ok(not public.send_allowed('demo', '+61499999999', 'false', array[]::text[]), 'non-production sender rejects an unlisted number');
+select ok(not public.send_allowed('demo', '+61499999999', null, array[]::text[]), 'missing PRODUCTION env var is treated as non-production');
+select ok(not public.send_allowed('demo', '+61499999999', '', array[]::text[]), 'empty PRODUCTION env var is treated as non-production');
+select ok(not public.send_allowed('demo', '+61499999999', 'TRUE', array[]::text[]), 'wrong-case PRODUCTION env var is treated as non-production');
 
 -- ---------- 2. cancel dev messages ----------
 select ok((select cancelled from public.cancel_dev_messages()) >= 3, 'cancel returns the count of cancelled queued/sending');

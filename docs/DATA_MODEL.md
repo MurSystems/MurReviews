@@ -86,6 +86,20 @@ Deletes a number's entire request history (all messages) so it can be re-added
 (the 90-day rule no longer blocks it). Raises `42501` for non-admins. Never
 touches `opt_outs`.
 
+### Stage 3 (queue / quiet hours / reminder)
+- `next_send_time(candidate, timezone)` — rolls a send time forward to the next
+  9am if it falls outside 9am-8pm in the business's timezone (DST-aware via
+  `AT TIME ZONE`).
+- `queue_reminders()` — service-role only. Queues one reminder per initial text
+  3 days after it was sent, if still not clicked/opted-out and the business is
+  not paused or over its trial cap. Quiet hours apply to the reminder.
+- `gsm7_length(text)` / `render_message_text(template, …)` — GSM-7 septet count
+  (extended chars = 2) and placeholder rendering for the 160-character rule.
+- `businesses.reminder_template` — the reminder's own template.
+- `add_customer` now applies `next_send_time` to the queued message, and
+  `send_allowed` takes the raw `PRODUCTION` env string (only exact `"true"` is
+  production).
+
 Trial cap is enforced in `add_customer` (a trial business at `trial_text_cap`
 returns `capped` and queues nothing). The claim function only respects paused
 status; cap enforcement lives at queue time so it cannot race a multi-row

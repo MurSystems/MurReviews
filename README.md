@@ -3,13 +3,13 @@
 Multi-tenant app that lets local businesses collect more Google reviews by
 texting customers a review link after a job. Operated by Mur Systems.
 
-**Status: Stage 4 complete** — short links, click tracking, and the opt-out
-page (Cloudflare Worker). Stages 1–3 (schema + RLS, owner app, queue/reminders)
-are also in. See [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
+**Status: Stage 5 complete** — SMSGate sender, cron, webhook, throttling and
+demo mode (mocked; no live sending). Stages 1–4 (schema + RLS, owner app,
+queue/reminders, review links) are also in. See
+[`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
 
-Review/opt-out links live at
-**https://mur-reviews-links.mursystems123.workers.dev** (see `LINK_DOMAIN` in
-`.env.example` — swap for a custom short domain later).
+Review/opt-out links live at **https://m.mursystems123.workers.dev**
+(`LINK_DOMAIN` in `.env.example` — swap for a custom short domain later).
 
 ## Stack (target)
 
@@ -63,6 +63,38 @@ Before onboarding real clients you'll need **custom SMTP** (a free provider is
 fine), which raises the limit to 30/hour (adjustable in Auth → Rate Limits)
 and lets you send to any address. Not set up yet. See Supabase's
 [Auth SMTP guide](https://supabase.com/docs/guides/auth/auth-smtp).
+
+## SMSGate gateway (Stage 5)
+
+The Worker runs a cron every minute: it claims due messages, renders the text
+(160 GSM-7 rule + nameless fallback), applies the send allowlist, throttles
+sends, and marks each message sent/failed. Inbound webhooks at `/webhook` are
+HMAC-SHA256-authenticated and handle STOP replies (opt-out) and other replies;
+`system:ping` keeps the gateway heartbeat. **Current mode is log-only/mocked —
+nothing actually sends.** `PRODUCTION` is unset and `SEND_ALLOWLIST` holds only
+your own number.
+
+**End-to-end encryption:** SMSGate's cloud supports E2E encryption (message
+text and numbers encrypted at rest via device RSA-2048 + AES-GCM), but it is
+not a simple passphrase and must be implemented in the sender with
+trust-on-first-use. **Not enabled yet** — revisit before paying clients (or
+self-host the SMSGate server).
+
+### Pairing the SMSGate app (later)
+1. Install "SMS Gateway for Android" from Google Play.
+2. Open it → Settings → Cloud server → enable cloud mode.
+3. Tap "Sign Up" to create an anonymous account.
+4. Note the username, password, and device ID shown in the Cloud server section.
+5. Send me those (I'll store them server-side as a Worker secret and a
+   `gateway_credentials` row).
+
+### Live send checklist (first real gateway)
+- [ ] Put your own mobile on `SEND_ALLOWLIST` (only that number can send).
+- [ ] Run `cancel_dev_messages()` and note the count it returns.
+- [ ] Send one test text to your own number.
+- [ ] Tap the review link → confirm the click is recorded.
+- [ ] Reply `STOP` → confirm the number shows as opted out.
+- [ ] Then set `SMSGATE_LIVE=true` (and `PRODUCTION=true` only for real traffic).
 
 ## Run the DB tests
 

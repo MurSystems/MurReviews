@@ -4,7 +4,13 @@
   "main": "src/index.ts",
   "compatibility_date": "2026-11-01",
   "vars": {
-    "SUPABASE_URL": "https://pxnrcwnqoooemashbjgt.supabase.co"
+    "SUPABASE_URL": "https://pxnrcwnqoooemashbjgt.supabase.co",
+    "SEND_ALLOWLIST": "+61411875278",
+    "LINK_DOMAIN": "https://m.mursystems123.workers.dev",
+    "SEND_THROTTLE_MS": "3000"
+  },
+  "triggers": {
+    "crons": ["* * * * *"]
   },
   "durable_objects": {
     "bindings": [

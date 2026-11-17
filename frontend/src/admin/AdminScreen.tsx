@@ -235,7 +235,7 @@ export default function AdminScreen() {
     }
   }
 
-  async function onSendTestNow(id: string, name: string) {
+  async function runTestSend(id: string, name: string) {
     setNotice(null);
     try {
       const r = await adminFetch(`/admin/businesses/${id}/send-test-now`, 'POST', {});
@@ -248,6 +248,14 @@ export default function AdminScreen() {
     } catch (err) {
       showError(err);
     }
+  }
+
+  async function onSendTestNow(e: FormEvent) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    const id = String(fd.get('business_id') ?? '');
+    const name = businesses.find((b) => b.id === id)?.name ?? 'this business';
+    await runTestSend(id, name);
   }
 
   async function onGenerateLink(e: FormEvent) {
@@ -407,6 +415,28 @@ export default function AdminScreen() {
 
         {tab === 'businesses' && (
           <>
+            {businesses.length > 0 && (
+              <form onSubmit={onSendTestNow} className="card">
+                <h2>Send test now</h2>
+                <p className="muted" style={{ margin: 0 }}>
+                  Sends one text immediately to the allowlisted number, ignoring quiet hours and the
+                  delay. It is not counted in usage or stats.
+                </p>
+                <label className="field">
+                  <span>Business</span>
+                  <select name="business_id" defaultValue={businesses[0].id}>
+                    {businesses.map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit" className="btn btn-primary">
+                  Send test now
+                </button>
+              </form>
+            )}
             <form onSubmit={onCreateBusiness} className="card">
               <h2>Create business</h2>
               <label className="field">
@@ -459,10 +489,6 @@ export default function AdminScreen() {
               <h2>Businesses</h2>
               <p className="muted" style={{ marginTop: 0 }}>
                 {businesses.length} total · {interested} want AI replies.
-              </p>
-              <p className="muted" style={{ marginTop: 0 }}>
-                Send test now texts the allowlisted number immediately, ignoring quiet hours and the
-                delay. It is not counted in usage or stats.
               </p>
               <div className="table-wrap">
                 <table>
@@ -552,7 +578,7 @@ export default function AdminScreen() {
                             <button
                               className="ghost"
                               type="button"
-                              onClick={() => onSendTestNow(b.id, b.name)}
+                              onClick={() => runTestSend(b.id, b.name)}
                             >
                               Send test now
                             </button>

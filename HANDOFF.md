@@ -2,7 +2,7 @@
 
 ## Deployed & where
 - **Supabase** (DB + auth + storage): project ref `pxnrcwnqoooemashbjgt`, name "MurSystems", region ap-southeast-2.
-- **Frontend** (owner + admin PWA): `https://mur-reviews.mursystems123.workers.dev` (Cloudflare Pages, project `mur-reviews`).
+- **Frontend** (owner + admin PWA): `https://mur-reviews.mursystems123.workers.dev` (Cloudflare Worker `mur-reviews` with static assets — not a Pages project).
 - **Worker** (links /r,/o + cron sender + webhook + admin routes + review snapshots): `https://m.mursystems123.workers.dev` (name `m`).
 - **GitHub**: `https://github.com/MurSystems/MurReviews.git` (branch `main`).
 - **Repo**: `C:\Claude.projects\mur-reviews` (standalone git repo; NOT the Python `free-claude-code` repo).
@@ -10,8 +10,12 @@
 ## Pending (in this order)
 1. **Google review tracking (optional)** — dashboard is finished and works without a key. Add `GOOGLE_PLACES_API_KEY` to root `.env` and `wrangler secret put GOOGLE_PLACES_API_KEY` (piped, never printed) to turn snapshots on; until then `/status` returns `places_connected:false`, the dashboard shows texts/clicks/click-rate and "Google review tracking not connected yet.", and the `0 1 * * *` cron exits cleanly without failing.
 2. **Live send test** — Mobile Message creds into `.env` → set Worker secrets → `GET /v1/senders` (list) → `SENDER_LIVE=true` → `cancel_dev_messages()` (show count) → one text → click → STOP.
-3. **UI pass** — styling/polish (everything is functional but plain).
-4. **README** — finalise (setup steps largely present).
+3. **UI pass — Session 2** (Session 1 done 2026-11-17: brand foundation, logo, login, owner header, What's new, Add customer, icons/manifest):
+   - Restyle Activity, Dashboard, Settings + Import with the same layout/type system and clear section headings; readable at phone width. Activity is still the "coming in a later stage" placeholder — decide whether to fill it from `messages`/`replies` or keep it styled as a placeholder.
+   - Settings: one "Coming soon" card for AI review replies with an "I want this" button that records the business once and shows in admin (needs a migration + RLS + admin read).
+   - Admin: black background, gold accents, every field labelled (timezone, send mode, delay), Copy button beside every generated link, success message names the business.
+   - Check every screen at phone width, then update this file, commit, push, deploy.
+4. **README** — finalise (setup steps largely present; title/brand still says "Reviews by Mur Systems").
 
 ## Decisions made
 - **Stack**: React+Vite PWA · Cloudflare Workers (free) · Supabase Postgres+auth+storage (free).
@@ -20,7 +24,10 @@
 - **Send modes**: `sms_provider` (default, Mobile Message) · `android_gateway` (SMSGate, optional) · `demo` · `log_only`. Live switch = `SENDER_LIVE` (off). `PRODUCTION` unset. `SEND_ALLOWLIST` = operator's number only.
 - **SMSGate**: cloud relay recommended; E2E (RSA+AES-GCM) **not** implemented (deferred). **Mobile Message**: sender = "own mobile number", verified in dashboard (4-digit code), no documented limit; ACMA Register is for business-name senders only.
 - **Defaults**: delay 60 min · quiet hours 9am–8pm (Melbourne) · reminder at 3 days · `daily_send_cap` (import drip) **15** · `daily_text_cap` **100** · `monthly_text_cap` **500** · `trial_text_cap` **30** · demo send 1/30d per number + 20/day · tokens 8-char base62.
-- **Brand**: "Mur Systems" / "Reviews by Mur Systems" · white bg, near-black text, blue accent (in `frontend/src/config.ts`).
+- **Brand**: product **"Mur Reviews"**, company **"Mur Systems"** ("by Mur Systems" on the login page only). Colours: black `#0c0c0c`, gold `#c8a45c`, ivory `#f4efe6`, ink `#14110d`. Cinzel (Google Fonts) for the logo, product/business names and headings only; everything else sans-serif. Gold on black; on ivory, text and buttons are ink and gold is only thin lines/small accents. All in `frontend/src/config.ts`.
+- **Logo**: code-only component `frontend/src/components/Logo.tsx` — Cinzel "M" in a thin outer ring + slightly heavier inner ring, with a "MUR REVIEWS" wordmark; `compact` prop gives the ring-only mark used in the owner header.
+- **What's new**: `config.whatsNew.version` + `message`; shown once per user, dismissed in localStorage under `mur-whats-new:<userId>`.
+- **App icon/PWA**: gold M ring on black, PNGs 32/180/192/512 in `frontend/public/`; manifest name "Mur Reviews". The old purple `favicon.svg` was removed.
 - **Templates**: shortened; end with `Opt out: {opt_out}`; one segment (two only for long names). Mock sends carry `messages.mock=true` and are excluded from all stats.
 - **Auth**: email+password (primary) + magic link (secondary); owners onboarded via `invite` (set-password) link, reset via `recovery`.
 
@@ -36,8 +43,10 @@
 - Worker tests: `cd worker && npm test` (Vitest).
 - Push migrations: `supabase db push --linked`.
 - Deploy Worker: `cd worker && wrangler deploy`.
-- Deploy frontend: `cd frontend && wrangler pages deploy ./dist --project-name mur-reviews`.
-- Cloudflare auth: `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` (`b228d54762c8a6aab17f5d26c8f84d5a`).
+- Deploy frontend: `cd frontend && npm run build && npx wrangler deploy --name mur-reviews`. The live Worker is `mur-reviews`; the Vite config's own name is `frontend`, so pass `--name` or it deploys a second Worker.
+- Cloudflare auth: `cd worker && npx wrangler login --device` (OAuth token expires; device flow avoids the localhost callback). `CLOUDFLARE_ACCOUNT_ID` is `b228d54762c8a6aab17f5d26c8f84d5a`.
 
-## Next step
-Optional: add the Google key (`GOOGLE_PLACES_API_KEY` in root `.env` → `wrangler secret put GOOGLE_PLACES_API_KEY`, piped from `.env` and never printed → redeploy) and confirm the snapshot cron records a `review_snapshots` row. Otherwise proceed to the live send test.
+## Next step (Session 2 — UI pass)
+Restyle Activity, Dashboard, Settings + Import; add the AI-replies "Coming soon" card with a once-per-business "I want this" record and surface it in admin; restyle Admin black/gold with labelled fields and Copy buttons; check every screen at phone width; then update this file, commit, push, deploy.
+
+Optional earlier items remain available: add `GOOGLE_PLACES_API_KEY` (root `.env` → `wrangler secret put`, piped and never printed → redeploy) and confirm the snapshot cron writes `review_snapshots`; then run the live send test.

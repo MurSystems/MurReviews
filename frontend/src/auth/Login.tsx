@@ -2,6 +2,20 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { supabase } from '../supabase';
 import { config } from '../config';
+import Logo from '../components/Logo';
+
+function friendlyError(message: string): string {
+  if (/invalid login credentials/i.test(message)) {
+    return 'That email and password don’t match. Check them and try again.';
+  }
+  if (/email not confirmed/i.test(message)) {
+    return 'Confirm your email first — open the link we sent you.';
+  }
+  if (/rate limit|too many/i.test(message)) {
+    return 'Too many attempts. Wait a minute and try again.';
+  }
+  return message;
+}
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -13,68 +27,77 @@ export default function Login() {
   async function onSubmitPassword(e: FormEvent) {
     e.preventDefault();
     setError('');
+    setSent(false);
     setBusy(true);
     const { error } = await supabase.auth.signInWithPassword({
       email: email.trim(),
       password,
     });
     setBusy(false);
-    if (error) setError(error.message);
+    if (error) setError(friendlyError(error.message));
   }
 
-  async function onMagicLink(e: FormEvent) {
-    e.preventDefault();
+  async function onMagicLink() {
     setError('');
+    setSent(false);
     setBusy(true);
     const { error } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: { emailRedirectTo: window.location.origin },
     });
     setBusy(false);
-    if (error) setError(error.message);
+    if (error) setError(friendlyError(error.message));
     else setSent(true);
   }
 
   return (
-    <div className="center">
-      <form className="card" onSubmit={onSubmitPassword}>
-        <h1>{config.product}</h1>
-        <p className="muted">Log in to {config.brand}.</p>
-        {sent ? (
-          <p className="ok">Magic link sent to {email} — tap it to log in.</p>
-        ) : (
-          <>
+    <div className="auth dark">
+      <div className="auth-card">
+        <Logo size={88} />
+        <h1 className="auth-title">{config.product}</h1>
+        <p className="auth-byline">{config.byline}</p>
+
+        <form onSubmit={onSubmitPassword}>
+          <label className="field">
+            <span>Email</span>
             <input
               type="email"
               autoComplete="email"
-              placeholder="you@business.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
             />
+          </label>
+          <label className="field">
+            <span>Password</span>
             <input
               type="password"
               autoComplete="current-password"
-              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
-            <button type="submit" disabled={busy}>
-              {busy ? 'Logging in…' : 'Log in'}
-            </button>
-            <button
-              type="button"
-              className="ghost"
-              disabled={busy}
-              onClick={onMagicLink}
-            >
-              Email me a magic link instead
-            </button>
-          </>
+          </label>
+          <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
+            {busy ? 'Logging in…' : 'Log in'}
+          </button>
+        </form>
+
+        <button type="button" className="btn-ghost" disabled={busy} onClick={onMagicLink}>
+          Email me a sign-in link instead
+        </button>
+
+        {sent && (
+          <p className="ok" role="status">
+            Sign-in link sent to {email}. Open it on this device.
+          </p>
         )}
-        {error && <p className="error">{error}</p>}
-      </form>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

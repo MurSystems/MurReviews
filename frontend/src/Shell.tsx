@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from './supabase';
 import { config } from './config';
+import { LogoMark } from './components/Logo';
 import AddCustomer from './screens/AddCustomer';
 import Activity from './screens/Activity';
 import Dashboard from './screens/Dashboard';
@@ -14,7 +15,7 @@ const BASE_SCREENS = [
   { key: 'settings', label: 'Settings', Component: Settings },
 ] as const;
 
-export function initials(name: string): string {
+function initials(name: string): string {
   return name
     .split(/\s+/)
     .map((w) => w[0])
@@ -27,6 +28,8 @@ export function initials(name: string): string {
 export default function Shell() {
   const [screen, setScreen] = useState<string>('add');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [business, setBusiness] = useState<{
     id: string;
     name: string;
@@ -35,12 +38,18 @@ export default function Shell() {
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
-      const userId = data.user?.id;
-      if (!userId) return;
+      const id = data.user?.id;
+      if (!id) return;
+      setUserId(id);
+      try {
+        setShowWhatsNew(localStorage.getItem(`mur-whats-new:${id}`) !== config.whatsNew.version);
+      } catch {
+        setShowWhatsNew(true);
+      }
       supabase
         .from('profiles')
         .select('role')
-        .eq('id', userId)
+        .eq('id', id)
         .single()
         .then(({ data: p }) => setIsAdmin(p?.role === 'admin'));
     });
@@ -52,6 +61,17 @@ export default function Shell() {
       .then(({ data }) => setBusiness(data ?? null));
   }, []);
 
+  function dismissWhatsNew() {
+    if (userId) {
+      try {
+        localStorage.setItem(`mur-whats-new:${userId}`, config.whatsNew.version);
+      } catch {
+        // Storage unavailable — the notice can show again next visit.
+      }
+    }
+    setShowWhatsNew(false);
+  }
+
   const screens = isAdmin
     ? [...BASE_SCREENS, { key: 'admin', label: 'Admin', Component: AdminScreen }]
     : BASE_SCREENS;
@@ -59,27 +79,41 @@ export default function Shell() {
 
   return (
     <div className="shell">
-      <header className="topbar">
-        <div className="brand">
-          {business?.logo_url ? (
-            <img className="badge" src={business.logo_url} alt="" />
-          ) : (
-            <span className="badge">{business ? initials(business.name) : '?'}</span>
-          )}
-          <strong>{business?.name ?? config.product}</strong>
+      <header className="app-header">
+        <div className="app-brand">
+          <LogoMark size={34} />
+          <strong className="business-name">{business?.name ?? config.product}</strong>
+          {business &&
+            (business.logo_url ? (
+              <img className="badge" src={business.logo_url} alt="" />
+            ) : (
+              <span className="badge">{initials(business.name)}</span>
+            ))}
         </div>
-        <button className="ghost" onClick={() => supabase.auth.signOut()}>
+        <button className="btn-ghost" onClick={() => supabase.auth.signOut()}>
           Log out
         </button>
       </header>
+
+      {showWhatsNew && (
+        <div className="whats-new" role="status">
+          <p>{config.whatsNew.message}</p>
+          <button className="btn-ghost" onClick={dismissWhatsNew}>
+            Got it
+          </button>
+        </div>
+      )}
+
       <main className="content">
         <current.Component />
       </main>
-      <nav className="tabbar">
+
+      <nav className="tabbar" aria-label="Sections">
         {screens.map((s) => (
           <button
             key={s.key}
-            className={s.key === screen ? 'tab active' : 'tab'}
+            className={s.key === current.key ? 'tab active' : 'tab'}
+            aria-current={s.key === current.key ? 'page' : undefined}
             onClick={() => setScreen(s.key)}
           >
             {s.label}

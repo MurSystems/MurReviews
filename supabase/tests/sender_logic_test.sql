@@ -3,7 +3,7 @@
 -- ============================================================================
 
 create extension if not exists pgtap with schema extensions;
-select plan(12);
+select plan(14);
 
 insert into auth.users (id, email) values ('00000000-0000-0000-0000-0000000000a1', 'owner@test.local');
 
@@ -97,6 +97,29 @@ select is(
   (select handled from public.handle_inbound_sms('unknown-device', '0491 570 006', 'STOP')),
   false,
   'an unknown device id is not handled'
+);
+
+-- 8. sms_provider mode: the linked opt-out column lookup must not be
+--    ambiguous with the OUT parameters (regression: SQLSTATE 42702).
+insert into public.businesses (id, name, place_id, status, send_mode, owner_id) values
+  ('00000000-0000-0000-0000-0000000000b2', 'SMS Biz', 'place-b', 'active', 'sms_provider', '00000000-0000-0000-0000-0000000000a1');
+insert into public.customers (id, business_id, first_name, mobile) values
+  ('00000000-0000-0000-0000-0000000000b3', '00000000-0000-0000-0000-0000000000b2', 'Mia', '+61491570110');
+insert into public.messages (id, business_id, customer_id, status, token, scheduled_at) values
+  ('00000000-0000-0000-0000-0000000000b4', '00000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-0000000000b3', 'sending', 'toksms1', now());
+insert into public.opt_out_links (token, business_id, mobile) values
+  ('optok2', '00000000-0000-0000-0000-0000000000b2', '+61491570110');
+select ok(
+  (select rendered_text like '%https://m.example/o/optok2%'
+     from public.prepare_send('00000000-0000-0000-0000-0000000000b4', 'https://m.example')),
+  'prepare_send renders a linked opt-out for sms_provider'
+);
+
+-- 9. mark_sent records mock sends so they never count as real.
+select public.mark_sent('00000000-0000-0000-0000-0000000000b4', 'Hi Mia, mock text', true);
+select ok(
+  (select mock from public.messages where id = '00000000-0000-0000-0000-0000000000b4'),
+  'mark_sent records the mock flag'
 );
 
 select * from finish();

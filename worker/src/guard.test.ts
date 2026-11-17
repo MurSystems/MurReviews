@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   isAllowed,
+  isMockSend,
   verifyHmacSignature,
   verifyAdminJwt,
   withCors,
@@ -23,6 +24,21 @@ describe("isAllowed", () => {
   });
   it("treats non-'true' production as non-production", () => {
     expect(isAllowed("demo", "+61499999999", "TRUE", [])).toBe(false);
+  });
+});
+
+describe("isMockSend", () => {
+  it("treats log_only as a mock even when live", () => {
+    expect(isMockSend("log_only", "true")).toBe(true);
+  });
+  it("treats every mode as a mock while live is off", () => {
+    expect(isMockSend("sms_provider", undefined)).toBe(true);
+    expect(isMockSend("sms_provider", "false")).toBe(true);
+    expect(isMockSend("demo", "TRUE")).toBe(true);
+  });
+  it("only treats a live sms_provider/demo send as real", () => {
+    expect(isMockSend("sms_provider", "true")).toBe(false);
+    expect(isMockSend("demo", "true")).toBe(false);
   });
 });
 

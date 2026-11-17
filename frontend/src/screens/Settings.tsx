@@ -37,6 +37,7 @@ function parseCsv(text: string): string[][] {
 type Summary = {
   will_send: number;
   skipped_invalid: number;
+  skipped_missing_name: number;
   skipped_opted_out: number;
   skipped_recent: number;
   skipped_duplicate: number;
@@ -365,8 +366,9 @@ export default function Settings() {
               Will send: <strong>{summary.will_send}</strong>
             </p>
             <p className="hint" style={{ margin: 0 }}>
-              Skipped — invalid {summary.skipped_invalid} · opted out {summary.skipped_opted_out} ·
-              asked recently {summary.skipped_recent} · duplicate {summary.skipped_duplicate}
+              Skipped — invalid number {summary.skipped_invalid} · missing name{' '}
+              {summary.skipped_missing_name} · opted out {summary.skipped_opted_out} · asked
+              recently {summary.skipped_recent} · duplicate {summary.skipped_duplicate}
             </p>
             <button
               type="button"

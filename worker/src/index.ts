@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   isAllowed,
+  isMockSend,
   verifyHmacSignature,
   verifyAdminJwt,
   withCors,
@@ -202,6 +203,7 @@ async function runSender(env: Env): Promise<void> {
       await supabaseRpc(env, "mark_sent", {
         p_message_id: msg.id,
         p_text: prep.rendered_text,
+        p_mock: isMockSend(prep.send_mode, env.SENDER_LIVE),
       });
     } catch (e) {
       await supabaseRpc(env, "mark_failed", {

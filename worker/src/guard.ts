@@ -9,6 +9,13 @@ export function isAllowed(
   return production === "true" || mode === "log_only" || allowlist.includes(mobile);
 }
 
+// A send that never reaches a real handset: log_only always, and every mode
+// while the live switch is off. These must be recorded with messages.mock=true
+// so they never count as real sends in stats.
+export function isMockSend(mode: string, senderLive: string | undefined): boolean {
+  return mode === "log_only" || senderLive !== "true";
+}
+
 // Verify an SMSGate webhook HMAC-SHA256 signature. The signature is computed
 // over `rawBody + timestamp` (unix seconds) and sent hex-encoded, with a
 // constant-time comparison so nobody can fake replies or opt-outs.

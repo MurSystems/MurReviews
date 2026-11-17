@@ -9,6 +9,8 @@ import Activity from './screens/Activity';
 import Dashboard from './screens/Dashboard';
 import Settings from './screens/Settings';
 import AdminScreen from './admin/AdminScreen';
+import InstallPrompt from './components/InstallPrompt';
+import { installKind, isStandalone } from './install';
 
 const BASE_SCREENS = [
   { key: 'add', label: 'Add', Component: AddCustomer },
@@ -22,6 +24,7 @@ export default function Shell() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [showInstall, setShowInstall] = useState(false);
   const [business, setBusiness] = useState<{
     id: string;
     name: string;
@@ -47,6 +50,14 @@ export default function Shell() {
       } catch {
         setShowWhatsNew(true);
       }
+      // Install is offered once on a phone, and always in Settings.
+      if (installKind() !== 'none' && !isStandalone()) {
+        try {
+          setShowInstall(localStorage.getItem(`mur-install-seen:${id}`) !== '1');
+        } catch {
+          setShowInstall(true);
+        }
+      }
       supabase
         .from('profiles')
         .select('role')
@@ -69,6 +80,17 @@ export default function Shell() {
       }
     }
     setShowWhatsNew(false);
+  }
+
+  function dismissInstall() {
+    if (userId) {
+      try {
+        localStorage.setItem(`mur-install-seen:${userId}`, '1');
+      } catch {
+        // Storage unavailable — the prompt can show again next visit.
+      }
+    }
+    setShowInstall(false);
   }
 
   const screens = isAdmin
@@ -94,6 +116,12 @@ export default function Shell() {
           Log out
         </button>
       </header>
+
+      {showInstall && !isStandalone() && (
+        <div className="install-once">
+          <InstallPrompt dismissible onDismiss={dismissInstall} />
+        </div>
+      )}
 
       {showWhatsNew && (
         <div className="whats-new" role="status">

@@ -7,6 +7,7 @@ import { useTheme } from '../useTheme';
 import { initials } from '../initials';
 import PhoneGateway from './PhoneGateway';
 import MonthlyUsage from '../components/MonthlyUsage';
+import InstallPrompt from '../components/InstallPrompt';
 
 const MAX_LOGO_BYTES = 1024 * 1024;
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -312,6 +313,10 @@ export default function Settings() {
           </button>
         </div>
       </section>
+
+      <div className="screen-section">
+        <InstallPrompt />
+      </div>
 
       {business && <PhoneGateway businessId={business.id} />}
 

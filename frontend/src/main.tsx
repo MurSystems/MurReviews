@@ -17,6 +17,16 @@ rootEl.style.setProperty('--ivory', t.ivory);
 rootEl.style.setProperty('--ink', t.ink);
 document.title = config.product;
 
+// A service worker is required for Chrome's install prompt. It does no
+// caching, so every visit still gets the latest deploy.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Installation stays unavailable; the app keeps working in the browser.
+    });
+  });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

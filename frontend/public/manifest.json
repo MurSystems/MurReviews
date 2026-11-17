@@ -1,12 +1,16 @@
 {
+  "id": "/",
   "name": "Mur Reviews",
   "short_name": "Mur Reviews",
   "description": "Collect more Google reviews by texting customers after the job.",
+  "lang": "en-AU",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#f4efe6",
   "theme_color": "#f4efe6",
+  "categories": ["business", "productivity"],
   "icons": [
     {
       "src": "/icon-192.png",

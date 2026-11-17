@@ -48,19 +48,106 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
+function shortDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'wanted';
+  return `wanted ${date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}`;
+}
+
+type Business = {
+  id: string;
+  name: string;
+  status: string;
+  send_mode: string;
+  texts_sent: number;
+  clicks: number;
+  gateway_online: boolean;
+  owner_email: string | null;
+  logo_url: string | null;
+  ai_replies_requested_at: string | null;
+};
+
+type AuditRow = {
+  id: string;
+  created_at: string;
+  admin_email: string;
+  action: string;
+  details: unknown;
+};
+
+type ActivityData = {
+  messages: {
+    id: string;
+    status: string;
+    mock: boolean | null;
+    message_text: string | null;
+    customers: { first_name: string; mobile: string } | { first_name: string; mobile: string }[] | null;
+  }[];
+  replies: { id: string; from_mobile: string; body: string }[];
+};
+
+type Notice = {
+  kind: 'ok' | 'error';
+  text: string;
+  link?: { label: string; value: string };
+};
+
+async function copyText(value: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    try {
+      const el = document.createElement('textarea');
+      el.value = value;
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(el);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+function CopyRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function onCopy() {
+    const ok = await copyText(value);
+    setCopied(ok);
+    if (ok) setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="copy-row">
+      <span className="copy-label">{label}</span>
+      <code className="link-text">{value}</code>
+      <button type="button" className="btn btn-secondary" onClick={onCopy}>
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </div>
+  );
+}
+
 export default function AdminScreen() {
   const [tab, setTab] = useState<'businesses' | 'demo' | 'audit'>('businesses');
-  const [businesses, setBusinesses] = useState<any[]>([]);
-  const [audit, setAudit] = useState<any[]>([]);
-  const [placesUsage, setPlacesUsage] = useState<{ rows: any[]; cap: number } | null>(null);
+  const [businesses, setBusinesses] = useState<Business[]>([]);
+  const [audit, setAudit] = useState<AuditRow[]>([]);
+  const [placesUsage, setPlacesUsage] = useState<{ rows: { request_count: number }[]; cap: number } | null>(
+    null,
+  );
   const [viewAs, setViewAs] = useState<{ id: string; name: string } | null>(null);
-  const [activity, setActivity] = useState<{ messages: any[]; replies: any[] } | null>(null);
-  const [msg, setMsg] = useState('');
+  const [activity, setActivity] = useState<ActivityData | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [newPlaceId, setNewPlaceId] = useState('');
 
-  useEffect(() => {
-    refresh();
-  }, []);
+  function showError(e: unknown) {
+    setNotice({ kind: 'error', text: errMsg(e) });
+  }
 
   async function refresh() {
     try {
@@ -68,243 +155,402 @@ export default function AdminScreen() {
       setAudit((await adminFetch('/admin/audit')) ?? []);
       setPlacesUsage(await adminFetch('/admin/places-usage'));
     } catch (e) {
-      setMsg(errMsg(e));
+      showError(e);
     }
   }
 
+  useEffect(() => {
+    refresh();
+  }, []);
+
   async function onCreateBusiness(e: FormEvent) {
     e.preventDefault();
-    const f = e.currentTarget as any;
-    setMsg('');
+    const form = e.currentTarget as HTMLFormElement;
+    const fd = new FormData(form);
+    const name = String(fd.get('name') ?? '').trim();
+    setNotice(null);
     try {
       const r = await adminFetch('/admin/businesses', 'POST', {
-        name: f.name.value,
-        place_id: f.place_id.value,
-        timezone: f.timezone.value || 'Australia/Melbourne',
-        send_mode: f.send_mode.value,
-        delay_minutes: Number(f.delay.value || 60),
-        owner_email: f.owner_email.value,
+        name,
+        place_id: String(fd.get('place_id') ?? '').trim(),
+        timezone: String(fd.get('timezone') ?? 'Australia/Melbourne'),
+        send_mode: String(fd.get('send_mode') ?? 'sms_provider'),
+        delay_minutes: Number(fd.get('delay') ?? 60),
+        owner_email: String(fd.get('owner_email') ?? '').trim(),
       });
-      f.reset();
-      setMsg(
-        r?.login_link
-          ? `Business created. Owner login link: ${r.login_link}`
-          : 'Business created.',
-      );
-      refresh();    } catch (err) {
-      setMsg(errMsg(err));
+      form.reset();
+      setNewPlaceId('');
+      setNotice({
+        kind: 'ok',
+        text: `Business “${name}” created.`,
+        link: r?.login_link ? { label: 'Owner login link', value: r.login_link } : undefined,
+      });
+      refresh();
+    } catch (err) {
+      showError(err);
     }
   }
 
   async function onSetStatus(id: string, status: string) {
-    setMsg('');
+    setNotice(null);
     try {
       await adminFetch(`/admin/businesses/${id}/status`, 'POST', { status });
-      setMsg(`Status set to ${status}.`);
+      setNotice({ kind: 'ok', text: `Status set to ${status}.` });
       refresh();
     } catch (err) {
-      setMsg(errMsg(err));
+      showError(err);
     }
   }
 
   async function onGenerateLink(e: FormEvent) {
     e.preventDefault();
-    const f = e.currentTarget as any;
-    setMsg('');
+    const form = e.currentTarget as HTMLFormElement;
+    const email = String(new FormData(form).get('email') ?? '').trim();
+    setNotice(null);
     try {
-      const { link } = await adminFetch('/admin/generate-login-link', 'POST', {
-        email: f.email.value,
-      });
-      setMsg(`Login link: ${link}`);
+      const { link } = await adminFetch('/admin/generate-login-link', 'POST', { email });
+      setNotice({ kind: 'ok', text: `Owner login link ready for ${email}.`, link: { label: 'Login link', value: link } });
     } catch (err) {
-      setMsg(errMsg(err));
+      showError(err);
     }
   }
 
   async function onDemoSend(e: FormEvent) {
     e.preventDefault();
-    const f = e.currentTarget as any;
-    setMsg('');
+    const fd = new FormData(e.currentTarget as HTMLFormElement);
+    setNotice(null);
     try {
       const r = await adminFetch('/admin/demo-send', 'POST', {
-        place_id: f.place_id.value,
-        mobile: f.mobile.value,
+        place_id: String(fd.get('place_id') ?? '').trim(),
+        mobile: String(fd.get('mobile') ?? '').trim(),
       });
-      setMsg(`Demo send: ${r?.outcome}${r?.demo_text ? ` — "${r.demo_text}"` : ''}`);
+      setNotice({
+        kind: 'ok',
+        text: `Demo send: ${r?.outcome}${r?.demo_text ? ` — “${r.demo_text}”` : ''}`,
+      });
     } catch (err) {
-      setMsg(errMsg(err));
+      showError(err);
     }
   }
 
   async function onViewAs(id: string, name: string) {
     setViewAs({ id, name });
     setActivity(null);
+    setNotice(null);
     try {
       setActivity(await adminFetch(`/admin/businesses/${id}/activity`));
     } catch (err) {
-      setMsg(errMsg(err));
+      showError(err);
     }
   }
 
   async function onResetPassword(email: string) {
-    setMsg('');
+    setNotice(null);
     try {
       const r = await adminFetch('/admin/send-password-reset', 'POST', { email });
-      setMsg(`Password reset link: ${r.link}`);
+      setNotice({
+        kind: 'ok',
+        text: `Password reset link for ${email}.`,
+        link: { label: 'Password reset link', value: r.link },
+      });
     } catch (err) {
-      setMsg(errMsg(err));
+      showError(err);
     }
   }
 
+  const noticeBox = notice && (
+    <div
+      className={notice.kind === 'ok' ? 'notice notice-inline' : 'warn'}
+      role={notice.kind === 'error' ? 'alert' : 'status'}
+    >
+      <div className="stack" style={{ gap: 8, flex: 1, minWidth: 0 }}>
+        <p style={{ margin: 0 }}>{notice.text}</p>
+        {notice.link && <CopyRow label={notice.link.label} value={notice.link.value} />}
+      </div>
+    </div>
+  );
+
   if (viewAs) {
     return (
-      <div>
-        <button className="ghost" onClick={() => setViewAs(null)}>← Back</button>
-        <h1>View as: {viewAs.name}</h1>
-        {!activity && <p className="muted">Loading…</p>}
-        {activity && (
-          <>
-            <h2>Messages</h2>
-            <ul>
-              {activity.messages.map((m: any) => (
-                <li key={m.id}>
-                  {m.customers?.first_name} ({m.customers?.mobile}) — {m.status}
-                  {m.mock ? ' (test)' : ''}
-                  {m.message_text ? `: ${m.message_text}` : ''}
-                </li>
-              ))}
-            </ul>
-            <h2>Replies</h2>
-            <ul>
-              {activity.replies.map((r: any) => (
-                <li key={r.id}>{r.from_mobile}: {r.body}</li>
-              ))}
-            </ul>
-          </>
-        )}
+      <div className="admin">
+        <div className="page page-wide">
+          <button className="btn-ghost" onClick={() => setViewAs(null)} type="button">
+            ← Back to admin
+          </button>
+          <header className="screen-head">
+            <h1>{viewAs.name}</h1>
+            <p className="muted">Viewing this business’s latest activity.</p>
+          </header>
+          {noticeBox}
+          {!activity && <p className="muted">Loading…</p>}
+          {activity && (
+            <>
+              <section className="card">
+                <h2>Messages</h2>
+                {activity.messages.length === 0 ? (
+                  <p className="empty">No messages yet.</p>
+                ) : (
+                  <ul className="list">
+                    {activity.messages.map((m) => {
+                      const customer = Array.isArray(m.customers) ? m.customers[0] : m.customers;
+                      return (
+                        <li key={m.id}>
+                          <span className="item-title">
+                            {customer?.first_name ?? 'Customer'} ({customer?.mobile ?? '—'})
+                            {m.mock ? ' (test)' : ''}
+                          </span>
+                          <span className="item-sub">
+                            {m.status}
+                            {m.message_text ? ` · ${m.message_text}` : ''}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </section>
+              <section className="screen-section">
+                <h2>Replies</h2>
+                {activity.replies.length === 0 ? (
+                  <p className="empty">No replies yet.</p>
+                ) : (
+                  <ul className="list">
+                    {activity.replies.map((r) => (
+                      <li key={r.id}>
+                        <span className="item-title">{r.body}</span>
+                        <span className="item-sub">{r.from_mobile}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            </>
+          )}
+        </div>
       </div>
     );
   }
 
+  const interested = businesses.filter((b) => b.ai_replies_requested_at).length;
+
   return (
-    <div>
-      <h1>Admin</h1>
-      {msg && <p className="warn">{msg}</p>}
+    <div className="admin">
+      <div className="page page-wide">
+        <header className="screen-head">
+          <h1>Admin</h1>
+          <p className="muted">Manage businesses, demo sends and the audit log.</p>
+        </header>
 
-      <div className="tabbar" style={{ marginBottom: 12 }}>
-        {(['businesses', 'demo', 'audit'] as const).map((t) => (
-          <button key={t} className={tab === t ? 'tab active' : 'tab'} onClick={() => setTab(t)}>
-            {t[0].toUpperCase() + t.slice(1)}
-          </button>
-        ))}
-      </div>
+        {noticeBox}
 
-      {tab === 'businesses' && (
-        <>
-          <form onSubmit={onCreateBusiness} className="card" style={{ maxWidth: 'none' }}>
-            <h2>Create business</h2>
-            <input name="name" placeholder="Business name" required />
-            <div>
-              <input name="place_id" placeholder="Google Place ID" required value={newPlaceId} onChange={(e) => setNewPlaceId(e.target.value)} />
-              <a href={PLACE_ID_FINDER} target="_blank" rel="noreferrer" style={{ fontSize: 14 }}>
-                Place ID finder ↗
-              </a>
-              {newPlaceId && (
-                <>
+        <nav className="subnav" aria-label="Admin sections">
+          {(['businesses', 'demo', 'audit'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={tab === t ? 'active' : undefined}
+              aria-current={tab === t ? 'page' : undefined}
+              onClick={() => setTab(t)}
+            >
+              {t[0].toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </nav>
+
+        {tab === 'businesses' && (
+          <>
+            <form onSubmit={onCreateBusiness} className="card">
+              <h2>Create business</h2>
+              <label className="field">
+                <span>Business name</span>
+                <input name="name" placeholder="e.g. Harbour Dental" required />
+              </label>
+              <label className="field">
+                <span>Google Place ID</span>
+                <input
+                  name="place_id"
+                  placeholder="ChIJ…"
+                  required
+                  value={newPlaceId}
+                  onChange={(e) => setNewPlaceId(e.target.value)}
+                />
+              </label>
+              <p className="field-note">
+                <a href={PLACE_ID_FINDER} target="_blank" rel="noreferrer">
+                  Find a Place ID ↗
+                </a>
+              </p>
+              {newPlaceId && <CopyRow label="Review link preview" value={reviewLink(newPlaceId)} />}
+              <label className="field">
+                <span>Timezone</span>
+                <input name="timezone" defaultValue="Australia/Melbourne" />
+              </label>
+              <label className="field">
+                <span>Send mode</span>
+                <select name="send_mode" defaultValue="sms_provider">
+                  <option value="sms_provider">SMS provider (Mobile Message)</option>
+                  <option value="android_gateway">Android gateway (SMSGate)</option>
+                  <option value="demo">Demo (no real text)</option>
+                  <option value="log_only">Log only (no real text)</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Review request delay (minutes)</span>
+                <input name="delay" type="number" min={0} defaultValue={60} />
+              </label>
+              <label className="field">
+                <span>Owner email</span>
+                <input name="owner_email" type="email" placeholder="owner@business.com" required />
+              </label>
+              <button type="submit" className="btn btn-primary">
+                Create business
+              </button>
+            </form>
+
+            <section className="screen-section">
+              <h2>Businesses</h2>
+              <p className="muted" style={{ marginTop: 0 }}>
+                {businesses.length} total · {interested} want AI replies.
+              </p>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Status</th>
+                      <th>Mode</th>
+                      <th>Sent</th>
+                      <th>Clicks</th>
+                      <th>Gateway</th>
+                      <th>AI replies</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {businesses.map((b) => (
+                      <tr key={b.id}>
+                        <td>
+                          <span className="row">
+                            {b.logo_url ? (
+                              <img className="badge" src={b.logo_url} alt="" />
+                            ) : (
+                              <span className="badge">{initials(b.name)}</span>
+                            )}
+                            {b.name}
+                          </span>
+                        </td>
+                        <td>{b.status}</td>
+                        <td>{b.send_mode}</td>
+                        <td>{b.texts_sent}</td>
+                        <td>{b.clicks}</td>
+                        <td>{b.gateway_online ? 'online' : 'offline'}</td>
+                        <td>
+                          {b.ai_replies_requested_at ? (
+                            <span className="pill">{shortDate(b.ai_replies_requested_at)}</span>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="row">
+                            <button className="ghost" type="button" onClick={() => onSetStatus(b.id, 'active')}>
+                              Active
+                            </button>
+                            <button className="ghost" type="button" onClick={() => onSetStatus(b.id, 'paused')}>
+                              Pause
+                            </button>
+                            <button className="ghost" type="button" onClick={() => onSetStatus(b.id, 'trial')}>
+                              Trial
+                            </button>
+                            <button className="ghost" type="button" onClick={() => onViewAs(b.id, b.name)}>
+                              View
+                            </button>
+                            {b.owner_email && (
+                              <button
+                                className="ghost"
+                                type="button"
+                                onClick={() => onResetPassword(b.owner_email as string)}
+                              >
+                                Reset pw
+                              </button>
+                            )}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          </>
+        )}
+
+        {tab === 'demo' && (
+          <form onSubmit={onDemoSend} className="card">
+            <h2>Demo send</h2>
+            <p className="muted" style={{ margin: 0 }}>
+              Texts a sample review request to a prospect’s mobile.
+            </p>
+            <label className="field">
+              <span>Prospect Place ID</span>
+              <input name="place_id" placeholder="ChIJ…" required />
+            </label>
+            <label className="field">
+              <span>Prospect mobile</span>
+              <input name="mobile" type="tel" placeholder="0491 570 006" required />
+            </label>
+            <button type="submit" className="btn btn-primary">
+              Send demo
+            </button>
+          </form>
+        )}
+
+        {tab === 'audit' && (
+          <>
+            <form onSubmit={onGenerateLink} className="card">
+              <h2>Generate owner login link</h2>
+              <label className="field">
+                <span>Owner email</span>
+                <input name="email" type="email" placeholder="owner@business.com" required />
+              </label>
+              <button type="submit" className="btn btn-primary">
+                Generate link
+              </button>
+            </form>
+
+            <section className="card screen-section">
+              <h2>Places API usage this month</h2>
+              <p className="stat-value" style={{ margin: 0 }}>
+                {placesUsage?.rows?.[0]?.request_count ?? 0}
+                <span className="muted" style={{ fontSize: 16, fontWeight: 400 }}>
                   {' '}
-                  <a href={reviewLink(newPlaceId)} target="_blank" rel="noreferrer" style={{ fontSize: 14 }}>
-                    review link preview ↗
-                  </a>
-                </>
+                  / {placesUsage?.cap ?? 900}
+                </span>
+              </p>
+            </section>
+
+            <section className="screen-section">
+              <h2>Audit log</h2>
+              {audit.length === 0 ? (
+                <p className="empty">No admin actions recorded yet.</p>
+              ) : (
+                <ul className="list">
+                  {audit.map((a) => (
+                    <li key={a.id}>
+                      <span className="item-title">
+                        {a.action} — {a.admin_email}
+                      </span>
+                      <span className="item-sub">
+                        {new Date(a.created_at).toLocaleString()} · {JSON.stringify(a.details)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               )}
-            </div>
-            <input name="timezone" placeholder="Timezone" defaultValue="Australia/Melbourne" />
-            <select name="send_mode" defaultValue="sms_provider">
-              <option value="sms_provider">sms_provider</option>
-              <option value="android_gateway">android_gateway</option>
-              <option value="demo">demo</option>
-              <option value="log_only">log_only</option>
-            </select>
-            <input name="delay" type="number" placeholder="Delay (minutes)" defaultValue={60} />
-            <input name="owner_email" type="email" placeholder="Owner email" required />
-            <button type="submit">Create</button>
-          </form>
-
-          <h2>Businesses</h2>
-          <table style={{ width: '100%', fontSize: 14, borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th>Name</th><th>Status</th><th>Mode</th><th>Sent</th><th>Clicks</th>
-                <th>Gateway</th><th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {businesses.map((b) => (
-                <tr key={b.id}>
-                  <td>
-                    <span className="brand">
-                      {b.logo_url ? (
-                        <img className="badge" src={b.logo_url} alt="" />
-                      ) : (
-                        <span className="badge">{initials(b.name)}</span>
-                      )}
-                      {b.name}
-                    </span>
-                  </td>
-                  <td>{b.status}</td>
-                  <td>{b.send_mode}</td>
-                  <td>{b.texts_sent}</td>
-                  <td>{b.clicks}</td>
-                  <td>{b.gateway_online ? 'online' : 'offline'}</td>
-                  <td>
-                    <button className="ghost" onClick={() => onSetStatus(b.id, 'active')}>Active</button>
-                    <button className="ghost" onClick={() => onSetStatus(b.id, 'paused')}>Pause</button>
-                    <button className="ghost" onClick={() => onSetStatus(b.id, 'trial')}>Trial</button>
-                    <button className="ghost" onClick={() => onViewAs(b.id, b.name)}>View</button>
-                    {b.owner_email && (
-                      <button className="ghost" onClick={() => onResetPassword(b.owner_email)}>Reset pw</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-
-      {tab === 'demo' && (
-        <form onSubmit={onDemoSend} className="card" style={{ maxWidth: 'none' }}>
-          <h2>Demo send</h2>
-          <input name="place_id" placeholder="Prospect Place ID" required />
-          <input name="mobile" type="tel" placeholder="Prospect mobile (e.g. 0491 570 006)" required />
-          <button type="submit">Send demo</button>
-        </form>
-      )}
-
-      {tab === 'audit' && (
-        <>
-          <form onSubmit={onGenerateLink} className="card" style={{ maxWidth: 'none' }}>
-            <h2>Generate owner login link</h2>
-            <input name="email" type="email" placeholder="Owner email" required />
-            <button type="submit">Generate link</button>
-          </form>
-
-          <h2>Places API usage</h2>
-          <p>
-            Used this month: <strong>{placesUsage?.rows?.[0]?.request_count ?? 0}</strong> / {placesUsage?.cap ?? 900}
-          </p>
-
-          <h2>Audit log</h2>
-          <ul>
-            {audit.map((a) => (
-              <li key={a.id}>
-                {new Date(a.created_at).toLocaleString()} — {a.admin_email} — {a.action}{' '}
-                {JSON.stringify(a.details)}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+            </section>
+          </>
+        )}
+      </div>
     </div>
   );
 }

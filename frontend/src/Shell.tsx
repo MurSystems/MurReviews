@@ -78,7 +78,7 @@ export default function Shell() {
   const current = screens.find((s) => s.key === screen) ?? screens[0];
 
   return (
-    <div className="shell">
+    <div className={current.key === 'admin' ? 'shell dark' : 'shell'}>
       <header className="app-header">
         <div className="app-brand">
           <LogoMark size={34} />

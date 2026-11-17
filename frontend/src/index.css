@@ -387,6 +387,7 @@ button:disabled {
   display: flex;
   flex-direction: column;
   min-height: 100%;
+  background: var(--bg);
 }
 
 .app-header {
@@ -557,6 +558,176 @@ th {
   font-size: 13px;
   color: var(--text-muted);
   font-weight: 600;
+}
+
+/* ---------- Screen headings & sections ---------- */
+
+.screen-head {
+  margin: 0 0 18px;
+}
+
+.screen-head p {
+  margin: 2px 0 0;
+}
+
+.screen-section {
+  margin-top: 20px;
+}
+
+.screen-section > h2 {
+  margin: 0 0 10px;
+}
+
+.card > h2:first-child,
+.card > h1:first-child {
+  margin-top: 0;
+}
+
+.page-wide {
+  max-width: 1000px;
+}
+
+.field-note {
+  margin: -4px 0 0;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* ---------- Activity list ---------- */
+
+.list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.list .item-title {
+  font-weight: 600;
+}
+
+.list .item-sub {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.list li:last-child {
+  border-bottom: none;
+}
+
+.empty {
+  margin: 0;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-size: 15px;
+  color: var(--text-muted);
+}
+
+/* ---------- Admin ---------- */
+
+.admin {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.admin .card {
+  background: var(--surface);
+}
+
+.admin h1,
+.admin h2 {
+  color: var(--gold);
+}
+
+.admin .badge {
+  background: var(--surface);
+}
+
+.subnav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.subnav button {
+  min-height: 42px;
+  padding: 0 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.subnav button.active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+
+.pill {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dark .pill {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+
+.copy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.copy-row .link-text {
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.copy-row button {
+  min-height: 40px;
+  padding: 0 14px;
+}
+
+.copy-label {
+  flex-basis: 100%;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.admin .table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.admin td .row {
+  gap: 6px;
+}
+
+.admin td .ghost {
+  min-height: 34px;
+  font-size: 13px;
 }
 
 @media (max-width: 420px) {

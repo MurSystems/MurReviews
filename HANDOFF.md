@@ -10,12 +10,11 @@
 ## Pending (in this order)
 1. **Google review tracking (optional)** — dashboard is finished and works without a key. Add `GOOGLE_PLACES_API_KEY` to root `.env` and `wrangler secret put GOOGLE_PLACES_API_KEY` (piped, never printed) to turn snapshots on; until then `/status` returns `places_connected:false`, the dashboard shows texts/clicks/click-rate and "Google review tracking not connected yet.", and the `0 1 * * *` cron exits cleanly without failing.
 2. **Live send test** — Mobile Message creds into `.env` → set Worker secrets → `GET /v1/senders` (list) → `SENDER_LIVE=true` → `cancel_dev_messages()` (show count) → one text → click → STOP.
-3. **UI pass — Session 2** (Session 1 done 2026-11-17: brand foundation, logo, login, owner header, What's new, Add customer, icons/manifest):
-   - Restyle Activity, Dashboard, Settings + Import with the same layout/type system and clear section headings; readable at phone width. Activity is still the "coming in a later stage" placeholder — decide whether to fill it from `messages`/`replies` or keep it styled as a placeholder.
-   - Settings: one "Coming soon" card for AI review replies with an "I want this" button that records the business once and shows in admin (needs a migration + RLS + admin read).
-   - Admin: black background, gold accents, every field labelled (timezone, send mode, delay), Copy button beside every generated link, success message names the business.
-   - Check every screen at phone width, then update this file, commit, push, deploy.
-4. **README** — finalise (setup steps largely present; title/brand still says "Reviews by Mur Systems").
+3. **README** — finalise (setup steps largely present; title/brand still says "Reviews by Mur Systems").
+4. Optional earlier items remain available: add `GOOGLE_PLACES_API_KEY` (root `.env` → `wrangler secret put`, piped and never printed → redeploy) and confirm the snapshot cron writes `review_snapshots`; then run the live send test.
+
+**Done 2026-11-17 (UI pass, Session 2)**: Activity, Dashboard, Settings/Import and Admin restyled on the shared layout/type system and phone width. Activity now lists the latest 20 texts and replies instead of the placeholder. Settings has a "Coming soon" AI-replies card whose once-per-business "I want this" button writes to `public.ai_reply_interest`. Admin runs on the dark shell (black/gold), every field is labelled, generated links have Copy buttons, and the business listing shows who wants AI replies.
+
 
 ## Decisions made
 - **Stack**: React+Vite PWA · Cloudflare Workers (free) · Supabase Postgres+auth+storage (free).
@@ -29,6 +28,9 @@
 - **What's new**: `config.whatsNew.version` + `message`; shown once per user, dismissed in localStorage under `mur-whats-new:<userId>`.
 - **App icon/PWA**: gold M ring on black, PNGs 32/180/192/512 in `frontend/public/`; manifest name "Mur Reviews". The old purple `favicon.svg` was removed.
 - **Templates**: shortened; end with `Opt out: {opt_out}`; one segment (two only for long names). Mock sends carry `messages.mock=true` and are excluded from all stats.
+- **Activity**: owner screen reads the latest 20 `messages` and 20 `replies` directly (RLS-scoped) — no placeholder left.
+- **AI reply interest**: `public.ai_reply_interest` (PK `business_id`, `requested_by`, `created_at`); owners may select/insert their own row, update/delete revoked, so one request per business. `admin_list_businesses()` now returns `ai_replies_requested_at`, which the admin table renders as a gold pill.
+- **Admin theme**: the Shell switches to the dark token set while the Admin tab is open, so header, tabbar and content are black with gold accents.
 - **Auth**: email+password (primary) + magic link (secondary); owners onboarded via `invite` (set-password) link, reset via `recovery`.
 
 ## Env vars & secrets (names only)
@@ -46,7 +48,5 @@
 - Deploy frontend: `cd frontend && npm run build && npx wrangler deploy --name mur-reviews`. The live Worker is `mur-reviews`; the Vite config's own name is `frontend`, so pass `--name` or it deploys a second Worker.
 - Cloudflare auth: `cd worker && npx wrangler login --device` (OAuth token expires; device flow avoids the localhost callback). `CLOUDFLARE_ACCOUNT_ID` is `b228d54762c8a6aab17f5d26c8f84d5a`.
 
-## Next step (Session 2 — UI pass)
-Restyle Activity, Dashboard, Settings + Import; add the AI-replies "Coming soon" card with a once-per-business "I want this" record and surface it in admin; restyle Admin black/gold with labelled fields and Copy buttons; check every screen at phone width; then update this file, commit, push, deploy.
-
-Optional earlier items remain available: add `GOOGLE_PLACES_API_KEY` (root `.env` → `wrangler secret put`, piped and never printed → redeploy) and confirm the snapshot cron writes `review_snapshots`; then run the live send test.
+## Next step (Session 3 — README)
+Finalise `README.md`: correct the title/brand to "Mur Reviews" (currently "Reviews by Mur Systems"), keep the existing setup steps, and document the AI-replies interest feature and the `GOOGLE_PLACES_API_KEY` optional switch. Then update this file, commit, push.

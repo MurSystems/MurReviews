@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { supabase } from '../supabase';
 import { config } from '../config';
@@ -17,40 +17,11 @@ export default function Login({ linkError = '' }: { linkError?: string }) {
   const [forgot, setForgot] = useState(false);
   const [error, setError] = useState(linkError);
   const [busy, setBusy] = useState(false);
-  // The server decides admin status from profiles.role. Remember which email
-  // it confirmed so an old answer never enables the link for a different one.
-  const [adminEmail, setAdminEmail] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (config.auth.signInLinkForEveryone) return;
-    const value = email.trim().toLowerCase();
-    if (!validEmail(value)) return;
-
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      fetch(`${config.workerUrl}/auth/is-admin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: value }),
-      })
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data) => {
-          if (!cancelled && data?.admin === true) setAdminEmail(value);
-        })
-        .catch(() => {
-          // Unreachable server just means the link stays hidden.
-        });
-    }, 350);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [email]);
-
-  const canUseSignInLink =
-    config.auth.signInLinkForEveryone ||
-    adminEmail === email.trim().toLowerCase();
+  // Never vary this by email. The login page must not reveal which addresses
+  // belong to admins; admin status is checked only after login, from the
+  // authenticated session.
+  const canUseSignInLink = config.auth.signInLinkForEveryone;
 
   async function onSubmitPassword(e: FormEvent) {
     e.preventDefault();

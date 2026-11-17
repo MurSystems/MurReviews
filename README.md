@@ -194,9 +194,12 @@ Two ways:
 
 ## Admin access
 
-Admin status is a `role = 'admin'` row in `public.profiles`; the Worker checks
-it server-side on every `/admin/*` request. The frontend contains no admin
-email list. To promote a user (service role):
+Admin status is a `role = 'admin'` row in `public.profiles`. The Worker checks
+it server-side on every `/admin/*` request, and the app reads it only after
+login from the authenticated session. The login page does not check or reveal
+admin status — it behaves the same for every email address, so it cannot be
+used to discover admin accounts. There is no admin email list in the frontend.
+To promote a user (service role):
 
 ```sql
 update public.profiles

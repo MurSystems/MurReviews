@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { config } from '../config';
+import MonthlyUsage from '../components/MonthlyUsage';
 
 type Stats = {
   reviews_gained: number;
@@ -25,6 +26,7 @@ function formatDay(iso: string): string {
 
 export default function Dashboard() {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [businessId, setBusinessId] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [placesConnected, setPlacesConnected] = useState<boolean | null>(null);
 
@@ -42,6 +44,7 @@ export default function Dashboard() {
       .then(({ data }) => {
         const id = data?.id;
         if (!id) return;
+        setBusinessId(id);
         supabase
           .rpc('owner_dashboard', { p_business_id: id })
           .then(({ data }) => setStats(data?.[0] ?? null));
@@ -62,6 +65,8 @@ export default function Dashboard() {
         <h1>Dashboard</h1>
         <p className="muted">How your review requests are going.</p>
       </header>
+
+      {businessId && <MonthlyUsage businessId={businessId} />}
 
       {!stats && <p className="muted">Loading…</p>}
 

@@ -216,6 +216,13 @@ async function sendSms(
 // ---------- cron sender ----------
 
 async function runSender(env: Env): Promise<void> {
+  // Texts that have waited more than 7 days (for example while paused at the
+  // monthly allowance) are cancelled instead of being sent late.
+  try {
+    await supabaseRpc(env, "expire_stale_queued_messages", {});
+  } catch (e) {
+    console.log(`[expire] ${String(e)}`);
+  }
   const claimed = await supabaseRpc(env, "claim_due_messages", {});
   const messages = Array.isArray(claimed) ? claimed : [];
   const throttleMs = Number(env.SEND_THROTTLE_MS ?? "3000") || 0;
@@ -500,6 +507,24 @@ async function handleAdmin(
         p_business_id: id,
         p_status: body.status,
         p_trial_cap: body.trial_cap ?? null,
+        p_admin_id: userId,
+      });
+      return Response.json({ ok: true });
+    }
+    if (
+      path.startsWith("/admin/businesses/") &&
+      path.endsWith("/monthly-cap") &&
+      method === "POST"
+    ) {
+      const id = path.split("/")[3];
+      const body = (await request.json()) as Record<string, any>;
+      const cap = Number(body.monthly_text_cap);
+      if (!Number.isInteger(cap) || cap < 0) {
+        return Response.json({ error: "Allowance must be zero or more." }, { status: 400 });
+      }
+      await supabaseRpc(env, "admin_set_monthly_cap", {
+        p_business_id: id,
+        p_cap: cap,
         p_admin_id: userId,
       });
       return Response.json({ ok: true });

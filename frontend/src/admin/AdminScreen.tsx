@@ -77,6 +77,9 @@ type Business = {
   owner_email: string | null;
   logo_url: string | null;
   ai_replies_requested_at: string | null;
+  texts_used_this_month: number;
+  monthly_text_cap: number;
+  monthly_state: 'ok' | 'warning' | 'paused';
 };
 
 type AuditRow = {
@@ -208,6 +211,24 @@ export default function AdminScreen() {
     try {
       await adminFetch(`/admin/businesses/${id}/status`, 'POST', { status });
       setNotice({ kind: 'ok', text: `Status set to ${status}.` });
+      refresh();
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function onSetMonthlyCap(e: FormEvent) {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const fd = new FormData(form);
+    const id = String(fd.get('business_id') ?? '');
+    const cap = Number(fd.get('monthly_text_cap'));
+    setNotice(null);
+    try {
+      await adminFetch(`/admin/businesses/${id}/monthly-cap`, 'POST', {
+        monthly_text_cap: cap,
+      });
+      setNotice({ kind: 'ok', text: `Monthly allowance set to ${cap} texts.` });
       refresh();
     } catch (err) {
       showError(err);
@@ -433,6 +454,8 @@ export default function AdminScreen() {
                       <th>Mode</th>
                       <th>Sent</th>
                       <th>Clicks</th>
+                      <th>This month</th>
+                      <th>Allowance</th>
                       <th>Gateway</th>
                       <th>AI replies</th>
                       <th>Actions</th>
@@ -455,6 +478,36 @@ export default function AdminScreen() {
                         <td>{b.send_mode}</td>
                         <td>{b.texts_sent}</td>
                         <td>{b.clicks}</td>
+                        <td>
+                          <span className="row">
+                            <span>
+                              {b.texts_used_this_month} / {b.monthly_text_cap}
+                            </span>
+                            {b.monthly_state === 'paused' && (
+                              <span className="pill">paused</span>
+                            )}
+                            {b.monthly_state === 'warning' && (
+                              <span className="pill">80%</span>
+                            )}
+                          </span>
+                        </td>
+                        <td>
+                          <form onSubmit={onSetMonthlyCap} className="row">
+                            <input type="hidden" name="business_id" value={b.id} />
+                            <input
+                              name="monthly_text_cap"
+                              type="number"
+                              min={0}
+                              step={1}
+                              defaultValue={b.monthly_text_cap}
+                              aria-label={`Monthly allowance for ${b.name}`}
+                              style={{ width: 80 }}
+                            />
+                            <button className="ghost" type="submit">
+                              Save
+                            </button>
+                          </form>
+                        </td>
                         <td>{b.gateway_online ? 'online' : 'offline'}</td>
                         <td>
                           {b.ai_replies_requested_at ? (

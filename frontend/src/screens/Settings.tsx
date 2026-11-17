@@ -6,6 +6,7 @@ import { saveTheme } from '../theme';
 import { useTheme } from '../useTheme';
 import { initials } from '../initials';
 import PhoneGateway from './PhoneGateway';
+import MonthlyUsage from '../components/MonthlyUsage';
 
 const MAX_LOGO_BYTES = 1024 * 1024;
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -252,6 +253,8 @@ export default function Settings() {
           {notice.text}
         </p>
       )}
+
+      {business && <MonthlyUsage businessId={business.id} />}
 
       <section className="card">
         <h2>Password</h2>

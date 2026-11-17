@@ -87,9 +87,17 @@ function TermsBody() {
 
       <h2>5. Message limits and fair use</h2>
       <p>
-        Plans, trial caps and daily or monthly message limits apply as shown in
-        the app or agreed with you. We may throttle or pause sending to protect
-        the service, the phone connection or recipients, or to comply with law.
+        Month to month, no lock-in contract. Cancel anytime. Includes 500 texts
+        per month.
+      </p>
+      <p>
+        First texts and reminders both count towards the monthly allowance;
+        messages sent in test mode do not. The allowance resets on the 1st of
+        each month (Melbourne time). When it runs out, sending pauses until the
+        reset. Queued texts wait for the reset unless they are more than 7 days
+        old, in which case they are cancelled. Contact Mur Systems to increase
+        your allowance. We may also throttle or pause sending to protect the
+        service, the phone connection or recipients, or to comply with law.
       </p>
 
       <h2>6. Fees</h2>

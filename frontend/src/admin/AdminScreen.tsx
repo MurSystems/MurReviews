@@ -99,6 +99,13 @@ function resetLabel(iso: string): string {
   });
 }
 
+function onboardingLabel(iso: string | null): string {
+  if (!iso) return 'not yet';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'not yet';
+  return date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' });
+}
+
 type Business = {
   id: string;
   name: string;
@@ -123,6 +130,15 @@ type Business = {
   starting_review_count: number | null;
   reviews_gained: number | null;
   last_snapshot_date: string | null;
+  sender_number: string | null;
+  sender_verified_at: string | null;
+  sender_checked_at: string | null;
+  tests_count: number;
+  payment_taken_at: string | null;
+  number_verified_at: string | null;
+  onboarding_created_at: string | null;
+  login_link_sent_at: string | null;
+  test_text_sent_at: string | null;
 };
 
 type AuditRow = {
@@ -214,6 +230,55 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+type OnboardingItem = {
+  item: string;
+  label: string;
+  field: keyof Business;
+};
+
+const ONBOARDING_ITEMS: OnboardingItem[] = [
+  { item: 'payment_taken', label: 'Payment taken', field: 'payment_taken_at' },
+  { item: 'number_verified', label: 'Number verified', field: 'number_verified_at' },
+  { item: 'business_created', label: 'Business created', field: 'onboarding_created_at' },
+  { item: 'login_link_sent', label: 'Login link sent', field: 'login_link_sent_at' },
+  { item: 'test_text_sent', label: 'Test text sent', field: 'test_text_sent_at' },
+];
+
+function OnboardingChecklist({
+  business,
+  onToggle,
+}: {
+  business: Business;
+  onToggle: (item: string, label: string, done: boolean) => void;
+}) {
+  return (
+    <ul className="list" style={{ gap: 2 }}>
+      {ONBOARDING_ITEMS.map(({ item, label, field }) => {
+        const iso = business[field] as string | null;
+        return (
+          <li key={item} style={{ padding: 0, border: 0 }}>
+            <span className="row" style={{ gap: 6 }}>
+              <span aria-hidden="true">{iso ? '✓' : '○'}</span>
+              <span className="hint" style={{ margin: 0 }}>
+                {label} · {onboardingLabel(iso)}
+              </span>
+              <button
+                className="ghost"
+                type="button"
+                aria-pressed={Boolean(iso)}
+                aria-label={`${label} for ${business.name}: ${iso ? 'done' : 'not yet'}`}
+                onClick={() => onToggle(item, label, !iso)}
+              >
+                {iso ? 'Undo' : 'Tick'}
+              </button>
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export default function AdminScreen() {
   const [tab, setTab] = useState<'businesses' | 'demo' | 'audit'>('businesses');
   const [businesses, setBusinesses] = useState<Business[]>([]);
@@ -259,6 +324,7 @@ export default function AdminScreen() {
         delay_minutes: Number(fd.get('delay') ?? 60),
         owner_email: String(fd.get('owner_email') ?? '').trim(),
         review_count: String(fd.get('review_count') ?? '').trim() || null,
+        sender_number: String(fd.get('sender_number') ?? '').trim() || null,
       });
       form.reset();
       setNewPlaceId('');
@@ -314,6 +380,58 @@ export default function AdminScreen() {
         billing_anchor: anchor,
       });
       setNotice({ kind: 'ok', text: `Billing date set to day ${Number(anchor.slice(8, 10))} each month.` });
+      refresh();
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function onSetSender(e: FormEvent) {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const fd = new FormData(form);
+    const id = String(fd.get('business_id') ?? '');
+    setNotice(null);
+    try {
+      await adminFetch(`/admin/businesses/${id}/sender-number`, 'POST', {
+        sender_number: String(fd.get('sender_number') ?? '').trim(),
+      });
+      setNotice({ kind: 'ok', text: 'Sender mobile saved. Press Check again to verify it.' });
+      refresh();
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function onCheckSender(id: string, name: string) {
+    setNotice(null);
+    try {
+      const r = await adminFetch(`/admin/businesses/${id}/check-sender`, 'POST', {});
+      setNotice({
+        kind: r?.verified ? 'ok' : 'error',
+        text: r?.verified
+          ? `Sender for ${name} is verified.`
+          : `Sender for ${name} is not verified yet. Add it in Mobile Message under Sender IDs > Own Mobile Number, enter the code, then press Check again.`,
+      });
+      refresh();
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function onToggleOnboarding(
+    id: string,
+    item: string,
+    label: string,
+    done: boolean,
+  ) {
+    setNotice(null);
+    try {
+      await adminFetch(`/admin/businesses/${id}/onboarding`, 'POST', { item, done });
+      setNotice({
+        kind: 'ok',
+        text: `${label} marked as ${done ? 'done' : 'not done'}.`,
+      });
       refresh();
     } catch (err) {
       showError(err);
@@ -589,6 +707,13 @@ export default function AdminScreen() {
                 </select>
               </label>
               <label className="field">
+                <span>Sender mobile (SMS provider only)</span>
+                <input name="sender_number" type="tel" placeholder="04xx xxx xxx" />
+              </label>
+              <p className="field-note">
+                Live sending stays off until this number is verified in Mobile Message.
+              </p>
+              <label className="field">
                 <span>Review request delay (minutes)</span>
                 <input name="delay" type="number" min={0} defaultValue={60} />
               </label>
@@ -628,7 +753,9 @@ export default function AdminScreen() {
                       <th>Results</th>
                       <th>Google reviews</th>
                       <th>Allowance</th>
-                      <th>Gateway</th>
+                      <th>Sender / Gateway</th>
+                      <th>Tests</th>
+                      <th>Onboarding</th>
                       <th>AI replies</th>
                       <th>Actions</th>
                     </tr>
@@ -749,7 +876,64 @@ export default function AdminScreen() {
                             </button>
                           </form>
                         </td>
-                        <td>{b.gateway_online ? 'online' : 'offline'}</td>
+                        <td>
+                          {b.send_mode === 'sms_provider' ? (
+                            <>
+                              <p className="hint" style={{ margin: 0 }}>
+                                {b.sender_number ?? 'No sender mobile set'}
+                              </p>
+                              <p className="hint" style={{ margin: 0 }}>
+                                {b.sender_verified_at
+                                  ? `verified ${onboardingLabel(b.sender_verified_at)}`
+                                  : b.sender_checked_at
+                                    ? `not verified · checked ${onboardingLabel(b.sender_checked_at)}`
+                                    : 'not checked yet'}
+                              </p>
+                              {!b.sender_verified_at && (
+                                <p className="hint" style={{ margin: 0 }}>
+                                  Not verified yet: add it in Mobile Message under Sender IDs &gt; Own
+                                  Mobile Number, enter the code, then press Check again
+                                </p>
+                              )}
+                              <form onSubmit={onSetSender} className="row">
+                                <input type="hidden" name="business_id" value={b.id} />
+                                <input
+                                  name="sender_number"
+                                  type="tel"
+                                  defaultValue={b.sender_number ?? ''}
+                                  placeholder="04xx xxx xxx"
+                                  aria-label={`Sender mobile for ${b.name}`}
+                                  style={{ width: 115 }}
+                                />
+                                <button className="ghost" type="submit">
+                                  Save
+                                </button>
+                              </form>
+                              <button
+                                className="ghost"
+                                type="button"
+                                onClick={() => onCheckSender(b.id, b.name)}
+                              >
+                                Check again
+                              </button>
+                            </>
+                          ) : (
+                            <span>{b.gateway_online ? 'online' : 'offline'}</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="hint" style={{ margin: 0 }}>
+                            {b.tests_count} test {b.tests_count === 1 ? 'text' : 'texts'}
+                          </span>
+                        </td>
+                        <td>
+                          <OnboardingChecklist
+                            business={b}
+                            onToggle={(item, label, done) =>
+                              onToggleOnboarding(b.id, item, label, done)
+                            }
+                          />
+                        </td>
                         <td>
                           {b.ai_replies_requested_at ? (
                             <span className="pill">{shortDate(b.ai_replies_requested_at)}</span>

@@ -201,6 +201,42 @@ class MobileMessageClient {
   }
 }
 
+// GET /v1/senders returns { status, results: [{ sender, type, label, ... }] }.
+// A number is usable once it appears in this list; an own mobile that has not
+// been verified yet does not.
+async function mobileMessageSenders(
+  env: Env,
+): Promise<Record<string, unknown>[]> {
+  const res = await fetch("https://api.mobilemessage.com.au/v1/senders", {
+    headers: {
+      Authorization: basicAuth(
+        env.MOBILE_MESSAGE_USERNAME ?? "",
+        env.MOBILE_MESSAGE_PASSWORD ?? "",
+      ),
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Mobile Message senders failed (${res.status})`);
+  }
+  const data = (await res.json()) as Record<string, unknown> | unknown[];
+  const list = Array.isArray(data)
+    ? data
+    : Array.isArray((data as Record<string, unknown>).results)
+      ? ((data as Record<string, unknown>).results as unknown[])
+      : Array.isArray((data as Record<string, unknown>).senders)
+        ? ((data as Record<string, unknown>).senders as unknown[])
+        : [];
+  return list.filter(
+    (row): row is Record<string, unknown> =>
+      typeof row === "object" && row !== null,
+  );
+}
+
+function senderMatches(row: Record<string, unknown>, sender: string): boolean {
+  const value = row.sender ?? row.number ?? row.mobile ?? row.name ?? "";
+  return String(value).replace(/\D/g, "") === sender.replace(/\D/g, "");
+}
+
 async function sendSms(
   env: Env,
   mode: string,
@@ -620,6 +656,7 @@ async function handleAdmin(
         p_owner_id: ownerId,
         p_admin_id: userId,
         p_review_count: reviewCount,
+        p_sender_number: body.sender_number ? String(body.sender_number) : null,
       });
       return Response.json({ ...(rows?.[0] ?? {}), login_link: loginLink });
     }
@@ -652,6 +689,97 @@ async function handleAdmin(
       await supabaseRpc(env, "admin_set_monthly_cap", {
         p_business_id: id,
         p_cap: cap,
+        p_admin_id: userId,
+      });
+      return Response.json({ ok: true });
+    }
+    if (
+      path.startsWith("/admin/businesses/") &&
+      path.endsWith("/sender-number") &&
+      method === "POST"
+    ) {
+      const id = path.split("/")[3];
+      const body = (await request.json()) as Record<string, any>;
+      const raw = String(body.sender_number ?? "").trim();
+      let sender: string | null = null;
+      if (raw) {
+        sender = normaliseAuMobile(raw);
+        if (!sender) {
+          return Response.json(
+            { error: "Enter an Australian mobile number, for example 0411 875 278." },
+            { status: 400 },
+          );
+        }
+      }
+      await supabaseRpc(env, "admin_set_sender_number", {
+        p_business_id: id,
+        p_sender_number: sender,
+        p_admin_id: userId,
+      });
+      return Response.json({ ok: true, sender_number: sender });
+    }
+    if (
+      path.startsWith("/admin/businesses/") &&
+      path.endsWith("/check-sender") &&
+      method === "POST"
+    ) {
+      const id = path.split("/")[3];
+      const rows = await supabaseGet(
+        env,
+        `businesses?id=eq.${id}&select=sender_number`,
+      );
+      const sender = Array.isArray(rows) ? rows[0]?.sender_number : null;
+      if (!sender) {
+        return Response.json(
+          { error: "Add this business's sender mobile first." },
+          { status: 400 },
+        );
+      }
+      if (!env.MOBILE_MESSAGE_USERNAME || !env.MOBILE_MESSAGE_PASSWORD) {
+        return Response.json(
+          { error: "Mobile Message is not configured on the server." },
+          { status: 400 },
+        );
+      }
+
+      let verified = false;
+      try {
+        const senders = await mobileMessageSenders(env);
+        verified = senders.some((row) => senderMatches(row, sender));
+      } catch (e) {
+        console.log(`[check-sender] ${id} failed: ${String(e)}`);
+        const status = String(e).match(/\((\d{3})\)/)?.[1];
+        return Response.json(
+          {
+            error:
+              status === "401" || status === "403"
+                ? "Mobile Message rejected the login. Check the username and password secrets."
+                : "Could not reach Mobile Message to check the sender. Try again.",
+          },
+          { status: 502 },
+        );
+      }
+
+      await supabaseRpc(env, "admin_mark_sender_verified", {
+        p_business_id: id,
+        p_verified: verified,
+        p_admin_id: userId,
+      });
+      return Response.json({ ok: true, verified, sender_number: sender });
+    }
+    if (
+      path.startsWith("/admin/businesses/") &&
+      path.endsWith("/onboarding") &&
+      method === "POST"
+    ) {
+      const id = path.split("/")[3];
+      const body = (await request.json()) as Record<string, any>;
+      const item = String(body.item ?? "");
+      const done = body.done === true;
+      await supabaseRpc(env, "admin_toggle_onboarding", {
+        p_business_id: id,
+        p_item: item,
+        p_done: done,
         p_admin_id: userId,
       });
       return Response.json({ ok: true });
@@ -770,6 +898,25 @@ async function handleAdmin(
           { error: "Too many test texts. Wait a while and try again." },
           { status: 429 },
         );
+      }
+
+      // Live sms_provider sending is blocked until the business's sender is
+      // verified. Recording a mock test (SENDER_LIVE off) is still allowed.
+      if (env.SENDER_LIVE === "true") {
+        const bizRows = await supabaseGet(
+          env,
+          `businesses?id=eq.${id}&select=send_mode,sender_verified_at`,
+        );
+        const biz = Array.isArray(bizRows) ? bizRows[0] : null;
+        if (biz?.send_mode === "sms_provider" && !biz.sender_verified_at) {
+          return Response.json(
+            {
+              error:
+                "Verify this business's sender mobile before sending a live test.",
+            },
+            { status: 400 },
+          );
+        }
       }
 
       const rows = await supabaseRpc(env, "admin_create_test_message", {

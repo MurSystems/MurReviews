@@ -40,7 +40,12 @@ function stubEnv(overrides: Partial<Env> = {}): Env {
   } as Env;
 }
 
-function stubFetch(opts: { sendOk?: boolean; prepRow?: any; createdRow?: any } = {}): Call[] {
+function stubFetch(opts: {
+  sendOk?: boolean;
+  prepRow?: any;
+  createdRow?: any;
+  businessRow?: any;
+} = {}): Call[] {
   const calls: Call[] = [];
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -59,6 +64,14 @@ function stubFetch(opts: { sendOk?: boolean; prepRow?: any; createdRow?: any } =
     }
     if (url.includes("/rest/v1/profiles")) {
       return Response.json([{ id: "admin-1" }]);
+    }
+    if (url.includes("/rest/v1/businesses?")) {
+      return Response.json([
+        opts.businessRow ?? {
+          send_mode: "sms_provider",
+          sender_verified_at: "2026-11-17T00:00:00Z",
+        },
+      ]);
     }
     if (url.endsWith("/rpc/admin_create_test_message")) {
       return Response.json([opts.createdRow ?? created]);
@@ -194,6 +207,32 @@ describe("POST /admin/businesses/:id/send-test-now", () => {
       p_retryable: true,
     });
     expect(rpcCalls(calls, "mark_sent")).toHaveLength(0);
+  });
+
+  it("blocks a live test until the sender mobile is verified", async () => {
+    const calls = stubFetch({
+      businessRow: { send_mode: "sms_provider", sender_verified_at: null },
+    });
+    const res = await worker.fetch(
+      testRequest(),
+      stubEnv({ SENDER_LIVE: "true" }),
+    );
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("Verify this business's sender mobile"),
+    });
+    expect(rpcCalls(calls, "admin_create_test_message")).toHaveLength(0);
+  });
+
+  it("still records a mock test when live sending is off and the sender is unverified", async () => {
+    const calls = stubFetch({
+      businessRow: { send_mode: "sms_provider", sender_verified_at: null },
+    });
+    const res = await worker.fetch(testRequest(), stubEnv());
+
+    expect(res.status).toBe(200);
+    expect(rpcCalls(calls, "admin_create_test_message")).toHaveLength(1);
   });
 
   it("sends with a non-Latin1 credential instead of failing to encode it", async () => {

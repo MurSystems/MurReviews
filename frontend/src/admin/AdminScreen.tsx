@@ -38,6 +38,16 @@ function reviewLink(placeId: string) {
   return `https://search.google.com/local/writereview?placeid=${encodeURIComponent(placeId)}`;
 }
 
+function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
 export default function AdminScreen() {
   const [tab, setTab] = useState<'businesses' | 'demo' | 'audit'>('businesses');
   const [businesses, setBusinesses] = useState<any[]>([]);
@@ -134,6 +144,16 @@ export default function AdminScreen() {
     }
   }
 
+  async function onResetPassword(email: string) {
+    setMsg('');
+    try {
+      const r = await adminFetch('/admin/send-password-reset', 'POST', { email });
+      setMsg(`Password reset link: ${r.link}`);
+    } catch (err) {
+      setMsg(errMsg(err));
+    }
+  }
+
   if (viewAs) {
     return (
       <div>
@@ -219,7 +239,16 @@ export default function AdminScreen() {
             <tbody>
               {businesses.map((b) => (
                 <tr key={b.id}>
-                  <td>{b.name}</td>
+                  <td>
+                    <span className="brand">
+                      {b.logo_url ? (
+                        <img className="badge" src={b.logo_url} alt="" />
+                      ) : (
+                        <span className="badge">{initials(b.name)}</span>
+                      )}
+                      {b.name}
+                    </span>
+                  </td>
                   <td>{b.status}</td>
                   <td>{b.send_mode}</td>
                   <td>{b.texts_sent}</td>
@@ -230,6 +259,9 @@ export default function AdminScreen() {
                     <button className="ghost" onClick={() => onSetStatus(b.id, 'paused')}>Pause</button>
                     <button className="ghost" onClick={() => onSetStatus(b.id, 'trial')}>Trial</button>
                     <button className="ghost" onClick={() => onViewAs(b.id, b.name)}>View</button>
+                    {b.owner_email && (
+                      <button className="ghost" onClick={() => onResetPassword(b.owner_email)}>Reset pw</button>
+                    )}
                   </td>
                 </tr>
               ))}

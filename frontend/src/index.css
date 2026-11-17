@@ -88,3 +88,20 @@ button:disabled { opacity: 0.5; cursor: default; }
 .ok { color: var(--success); }
 .warn { color: var(--accent); }
 .error { color: var(--danger); }
+
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  overflow: hidden;
+  object-fit: cover;
+  flex-shrink: 0;
+}

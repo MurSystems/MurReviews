@@ -26,9 +26,9 @@ insert into public.gateway_credentials (business_id, provider, payload) values
 
 -- 1. prepare_send renders the review link + STOP opt-out for demo mode.
 select ok(
-  (select rendered_text like '%https://m.example/r/tok12345%' and rendered_text like '%Reply STOP to opt out%'
+  (select rendered_text like '%https://m.example/r/tok12345%' and rendered_text like '%Opt out: Reply STOP%'
      from public.prepare_send('00000000-0000-0000-0000-0000000000d1', 'https://m.example')),
-  'prepare_send renders the review link and STOP opt-out'
+  'prepare_send renders the review link and labelled STOP opt-out'
 );
 
 -- 2. mark_sent stores the exact text and marks sent.

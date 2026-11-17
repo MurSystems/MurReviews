@@ -96,3 +96,25 @@ export function withCors(res: Response, allowOrigin: string): Response {
   }
   return new Response(res.body, { status: res.status, headers });
 }
+
+// Call Supabase's admin generate_link with the given type. "invite" sends a
+// set-your-password link for a new owner; "recovery" sends a reset link.
+export async function generateAuthLink(
+  url: string,
+  serviceKey: string,
+  email: string,
+  type: "invite" | "recovery",
+): Promise<{ userId: string; link: string }> {
+  const res = await fetch(`${url}/auth/v1/admin/generate_link`, {
+    method: "POST",
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ type, email }),
+  });
+  if (!res.ok) throw new Error(`generate_link (${type}) failed: ${res.status}`);
+  const data = (await res.json()) as { id?: string; action_link?: string };
+  return { userId: data.id ?? "", link: data.action_link ?? "" };
+}

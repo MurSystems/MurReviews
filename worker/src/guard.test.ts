@@ -5,6 +5,7 @@ import {
   verifyAdminJwt,
   withCors,
   allowedOrigin,
+  generateAuthLink,
 } from "./guard";
 
 describe("isAllowed", () => {
@@ -140,5 +141,34 @@ describe("withCors / allowedOrigin", () => {
       headers: { origin: "https://evil.example.com" },
     });
     expect(allowedOrigin(bad, "http://localhost:5173")).toBe("");
+  });
+});
+
+describe("generateAuthLink", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("sends an invite link (set password) for type invite", async () => {
+    let body = "";
+    globalThis.fetch = (async (_i, init) => {
+      body = String(init?.body);
+      return new Response(JSON.stringify({ id: "u1", action_link: "https://x" }), {
+        status: 200,
+      });
+    }) as typeof fetch;
+    const r = await generateAuthLink("https://x", "svc", "a@b.com", "invite");
+    expect(JSON.parse(body).type).toBe("invite");
+    expect(r.userId).toBe("u1");
+  });
+
+  it("sends a recovery link for type recovery", async () => {
+    let body = "";
+    globalThis.fetch = (async (_i, init) => {
+      body = String(init?.body);
+      return new Response(JSON.stringify({ id: "u1", action_link: "https://x" }), {
+        status: 200,
+      });
+    }) as typeof fetch;
+    await generateAuthLink("https://x", "svc", "a@b.com", "recovery");
+    expect(JSON.parse(body).type).toBe("recovery");
   });
 });

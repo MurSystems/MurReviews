@@ -14,9 +14,24 @@ const BASE_SCREENS = [
   { key: 'settings', label: 'Settings', Component: Settings },
 ] as const;
 
+export function initials(name: string): string {
+  return name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+}
+
 export default function Shell() {
   const [screen, setScreen] = useState<string>('add');
   const [isAdmin, setIsAdmin] = useState(false);
+  const [business, setBusiness] = useState<{
+    id: string;
+    name: string;
+    logo_url: string | null;
+  } | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -29,6 +44,12 @@ export default function Shell() {
         .single()
         .then(({ data: p }) => setIsAdmin(p?.role === 'admin'));
     });
+    supabase
+      .from('businesses')
+      .select('id,name,logo_url')
+      .limit(1)
+      .single()
+      .then(({ data }) => setBusiness(data ?? null));
   }, []);
 
   const screens = isAdmin
@@ -39,7 +60,14 @@ export default function Shell() {
   return (
     <div className="shell">
       <header className="topbar">
-        <strong>{config.product}</strong>
+        <div className="brand">
+          {business?.logo_url ? (
+            <img className="badge" src={business.logo_url} alt="" />
+          ) : (
+            <span className="badge">{business ? initials(business.name) : '?'}</span>
+          )}
+          <strong>{business?.name ?? config.product}</strong>
+        </div>
         <button className="ghost" onClick={() => supabase.auth.signOut()}>
           Log out
         </button>

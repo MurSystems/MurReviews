@@ -6,6 +6,7 @@ import {
   withCors,
   allowedOrigin,
   corsHeaders,
+  generateAuthLink as guardAuthLink,
 } from "./guard";
 
 export interface Env {
@@ -367,25 +368,26 @@ async function supabaseGet(env: Env, path: string): Promise<any> {
   return await res.json();
 }
 
+async function generateAuthLink(
+  env: Env,
+  email: string,
+  type: "invite" | "recovery",
+): Promise<{ userId: string; link: string }> {
+  return guardAuthLink(env.SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, email, type);
+}
+
+// A new owner gets an invite (they set a password); an existing owner gets a
+// password-reset link instead.
 async function generateLoginLink(
   env: Env,
   email: string,
 ): Promise<{ userId: string; link: string }> {
-  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/generate_link`, {
-    method: "POST",
-    headers: {
-      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ type: "magiclink", email }),
+  const existing = await supabaseRpc(env, "admin_find_owner", {
+    p_email: email,
   });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`generate_link failed (${res.status}): ${body}`);
-  }
-  const data = (await res.json()) as { id?: string; action_link?: string };
-  return { userId: data.id ?? "", link: data.action_link ?? "" };
+  return existing
+    ? generateAuthLink(env, email, "recovery")
+    : generateAuthLink(env, email, "invite");
 }
 
 async function handleAdmin(
@@ -409,9 +411,8 @@ async function handleAdmin(
       });
       let loginLink: string | null = null;
       if (!ownerId) {
-        // Create the owner user in the same step (generate_link magiclink
-        // creates the user properly and returns the id + login link).
-        const g = await generateLoginLink(env, body.owner_email);
+        // Create the owner and send a "set your password" invite.
+        const g = await generateAuthLink(env, body.owner_email, "invite");
         ownerId = g.userId;
         loginLink = g.link;
       }
@@ -455,6 +456,13 @@ async function handleAdmin(
       const email = String(body.email ?? "").trim();
       if (!email) return new Response("Bad request", { status: 400 });
       const g = await generateLoginLink(env, email);
+      return Response.json({ link: g.link });
+    }
+    if (path === "/admin/send-password-reset" && method === "POST") {
+      const body = (await request.json()) as Record<string, any>;
+      const email = String(body.email ?? "").trim();
+      if (!email) return new Response("Bad request", { status: 400 });
+      const g = await generateAuthLink(env, email, "recovery");
       return Response.json({ link: g.link });
     }
     if (path === "/admin/audit" && method === "GET") {

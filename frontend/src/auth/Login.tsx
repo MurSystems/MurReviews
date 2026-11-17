@@ -5,11 +5,24 @@ import { config } from '../config';
 
 export default function Login() {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
-  async function onSubmit(e: FormEvent) {
+  async function onSubmitPassword(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    setBusy(false);
+    if (error) setError(error.message);
+  }
+
+  async function onMagicLink(e: FormEvent) {
     e.preventDefault();
     setError('');
     setBusy(true);
@@ -24,11 +37,11 @@ export default function Login() {
 
   return (
     <div className="center">
-      <form className="card" onSubmit={onSubmit}>
+      <form className="card" onSubmit={onSubmitPassword}>
         <h1>{config.product}</h1>
-        <p className="muted">Log in with a magic link.</p>
+        <p className="muted">Log in to {config.brand}.</p>
         {sent ? (
-          <p className="ok">Sent! Check {email} and tap the link to log in.</p>
+          <p className="ok">Magic link sent to {email} — tap it to log in.</p>
         ) : (
           <>
             <input
@@ -39,8 +52,24 @@ export default function Login() {
               onChange={(e) => setEmail(e.target.value)}
               required
             />
+            <input
+              type="password"
+              autoComplete="current-password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
             <button type="submit" disabled={busy}>
-              {busy ? 'Sending…' : 'Send magic link'}
+              {busy ? 'Logging in…' : 'Log in'}
+            </button>
+            <button
+              type="button"
+              className="ghost"
+              disabled={busy}
+              onClick={onMagicLink}
+            >
+              Email me a magic link instead
             </button>
           </>
         )}

@@ -52,6 +52,7 @@ export default function AdminScreen() {
   const [tab, setTab] = useState<'businesses' | 'demo' | 'audit'>('businesses');
   const [businesses, setBusinesses] = useState<any[]>([]);
   const [audit, setAudit] = useState<any[]>([]);
+  const [placesUsage, setPlacesUsage] = useState<{ rows: any[]; cap: number } | null>(null);
   const [viewAs, setViewAs] = useState<{ id: string; name: string } | null>(null);
   const [activity, setActivity] = useState<{ messages: any[]; replies: any[] } | null>(null);
   const [msg, setMsg] = useState('');
@@ -65,6 +66,7 @@ export default function AdminScreen() {
     try {
       setBusinesses((await adminFetch('/admin/businesses')) ?? []);
       setAudit((await adminFetch('/admin/audit')) ?? []);
+      setPlacesUsage(await adminFetch('/admin/places-usage'));
     } catch (e) {
       setMsg(errMsg(e));
     }
@@ -286,6 +288,11 @@ export default function AdminScreen() {
             <input name="email" type="email" placeholder="Owner email" required />
             <button type="submit">Generate link</button>
           </form>
+
+          <h2>Places API usage</h2>
+          <p>
+            Used this month: <strong>{placesUsage?.rows?.[0]?.request_count ?? 0}</strong> / {placesUsage?.cap ?? 900}
+          </p>
 
           <h2>Audit log</h2>
           <ul>

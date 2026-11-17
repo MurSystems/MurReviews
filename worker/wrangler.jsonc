@@ -12,7 +12,7 @@
     "CORS_ORIGINS": "http://localhost:5173,https://mur-reviews.mursystems123.workers.dev"
   },
   "triggers": {
-    "crons": ["* * * * *"]
+    "crons": ["* * * * *", "0 1 * * *"]
   },
   "durable_objects": {
     "bindings": [

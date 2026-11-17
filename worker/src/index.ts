@@ -23,6 +23,7 @@ export interface Env {
   SENDER_LIVE?: string; // "true" to actually send (generic live switch)
   MOBILE_MESSAGE_USERNAME?: string;
   MOBILE_MESSAGE_PASSWORD?: string;
+  GOOGLE_PLACES_API_KEY?: string;
 }
 
 const BOT_UA =
@@ -469,6 +470,10 @@ async function handleAdmin(
       const rows = await supabaseRpc(env, "admin_get_audit", {});
       return Response.json(rows ?? []);
     }
+    if (path === "/admin/places-usage" && method === "GET") {
+      const rows = await supabaseRpc(env, "admin_places_usage", {});
+      return Response.json({ rows: rows ?? [], cap: MONTHLY_PLACES_CAP });
+    }
     if (
       path.startsWith("/admin/businesses/") &&
       path.endsWith("/activity") &&
@@ -491,6 +496,77 @@ async function handleAdmin(
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 400 });
   }
+}
+
+// ---------- review snapshots (Places API New) ----------
+
+const MONTHLY_PLACES_CAP = 900; // Place Details Enterprise has 1,000 free/month
+
+async function fetchPlaceRating(
+  env: Env,
+  placeId: string,
+): Promise<{ rating: number; count: number }> {
+  const res = await fetch(
+    `https://places.googleapis.com/v1/places/${placeId}`,
+    {
+      method: "GET",
+      headers: {
+        "X-Goog-Api-Key": env.GOOGLE_PLACES_API_KEY ?? "",
+        "X-Goog-FieldMask": "rating,userRatingCount",
+      },
+    },
+  );
+  if (!res.ok) throw new Error(`Places API failed: ${res.status}`);
+  const data = (await res.json()) as { rating?: number; userRatingCount?: number };
+  return { rating: data.rating ?? 0, count: data.userRatingCount ?? 0 };
+}
+
+async function runSnapshots(env: Env): Promise<void> {
+  const month = new Date().toISOString().slice(0, 7);
+  const usage = await supabaseRpc(env, "admin_places_usage", {});
+  const used =
+    (Array.isArray(usage)
+      ? usage.find((u: any) => u.month === month)?.request_count
+      : 0) ?? 0;
+  const remaining = MONTHLY_PLACES_CAP - used;
+  if (remaining <= 0) {
+    console.log(`[snapshots] monthly cap reached (${used}/${MONTHLY_PLACES_CAP})`);
+    return;
+  }
+
+  const active = await supabaseGet(
+    env,
+    "businesses?status=eq.active&select=id,place_id",
+  );
+  if (!Array.isArray(active) || active.length === 0) return;
+
+  // If daily snapshots would exceed the cap, snap each business less often.
+  const intervalDays = Math.max(1, Math.ceil((active.length * 30) / MONTHLY_PLACES_CAP));
+
+  let done = 0;
+  for (const b of active) {
+    if (done >= remaining) break;
+    const last = await supabaseGet(
+      env,
+      `review_snapshots?business_id=eq.${b.id}&select=snapshot_date&order=snapshot_date.desc&limit=1`,
+    );
+    const lastDate = Array.isArray(last) ? last[0]?.snapshot_date : null;
+    if (lastDate && (Date.now() - new Date(lastDate).getTime()) / 86400000 < intervalDays) {
+      continue;
+    }
+    try {
+      const place = await fetchPlaceRating(env, b.place_id);
+      await supabaseRpc(env, "record_review_snapshot", {
+        p_business_id: b.id,
+        p_rating: place.rating,
+        p_review_count: place.count,
+      });
+      done++;
+    } catch (e) {
+      console.error(`[snapshots] ${b.id} failed: ${e}`);
+    }
+  }
+  console.log(`[snapshots] recorded ${done} (${used + done}/${MONTHLY_PLACES_CAP})`);
 }
 
 // ---------- main ----------
@@ -530,7 +606,11 @@ export default {
     return withCors(new Response("Not found", { status: 404 }), allowOrigin);
   },
 
-  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await runSender(env);
+  async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    if (controller.cron === "0 1 * * *") {
+      await runSnapshots(env);
+    } else {
+      await runSender(env);
+    }
   },
 };

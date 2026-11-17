@@ -1,3 +1,10 @@
-# Local-dev secrets (copy to .dev.vars — never commit .dev.vars).
-# Set the real value via `wrangler secret put SUPABASE_SERVICE_ROLE_KEY` for deploy.
+# Local secrets for `wrangler dev`. Copy this file to `worker/.dev.vars`
+# (gitignored) and fill in only what you need. Never commit real values.
+# For deploy, set each real value with `wrangler secret put <NAME>`.
 SUPABASE_SERVICE_ROLE_KEY=
+SMSGATE_WEBHOOK_SECRET=
+MOBILE_MESSAGE_USERNAME=
+MOBILE_MESSAGE_PASSWORD=
+GOOGLE_PLACES_API_KEY=
+SENDER_LIVE=
+PRODUCTION=

@@ -8,10 +8,11 @@
 - **Repo**: `C:\Claude.projects\mur-reviews` (standalone git repo; NOT the Python `free-claude-code` repo).
 
 ## Pending (in this order)
-1. **Google review tracking (optional)** — dashboard is finished and works without a key. Add `GOOGLE_PLACES_API_KEY` to root `.env` and `wrangler secret put GOOGLE_PLACES_API_KEY` (piped, never printed) to turn snapshots on; until then `/status` returns `places_connected:false`, the dashboard shows texts/clicks/click-rate and "Google review tracking not connected yet.", and the `0 1 * * *` cron exits cleanly without failing.
-2. **Live send test** — Mobile Message creds into `.env` → set Worker secrets → `GET /v1/senders` (list) → `SENDER_LIVE=true` → `cancel_dev_messages()` (show count) → one text → click → STOP.
-3. **README** — finalise (setup steps largely present; title/brand still says "Reviews by Mur Systems").
-4. Optional earlier items remain available: add `GOOGLE_PLACES_API_KEY` (root `.env` → `wrangler secret put`, piped and never printed → redeploy) and confirm the snapshot cron writes `review_snapshots`; then run the live send test.
+1. **Live send test** — Mobile Message creds into `.env` → set Worker secrets → `GET /v1/senders` (list) → `SENDER_LIVE=true` → `cancel_dev_messages()` (show count) → one text → click → STOP.
+2. **Google review tracking (optional)** — dashboard is finished and works without a key. Add `GOOGLE_PLACES_API_KEY` to root `.env` and `wrangler secret put GOOGLE_PLACES_API_KEY` (piped, never printed) to turn snapshots on; until then `/status` returns `places_connected:false`, the dashboard shows texts/clicks/click-rate and "Google review tracking not connected yet.", and the `0 1 * * *` cron exits cleanly without failing.
+
+**Done 2026-11-17 (Session 8 — non-blocking polish)**: Android gateway work from the previous session was verified (worker + frontend typecheck, 32 worker tests) and committed as its own change before this pass. README is now a full setup and operations guide (onboarding, phone pairing, live-send checklist, pausing, password resets, deploy, tests, secrets by name). Added public `/terms` and `/privacy` pages (drafts for legal review, Mur Systems ABN 22 545 735 809) covering data held, Supabase Sydney storage, retention, client responsibilities, opt-outs and deletion; linked from the login footer and Settings and rendered without a session. Removed the admin email list from `frontend/src/config.ts`; login now asks `POST /auth/is-admin` (Worker, rate-limited per IP, service-role RPC `is_admin_email`) and the app still gets its Admin tab from `profiles.role`. Added a `businesses` trigger so `logo_url` must be a public-object URL under `logos/<business id>/`, with pgTAP coverage for own, foreign and external URLs. Migrations `20261117240000` and `20261117241000` are pushed; full DB suite, worker tests, frontend typecheck and lint pass.
+
 
 **Done 2026-11-17 (UI pass, Session 2)**: Activity, Dashboard, Settings/Import and Admin restyled on the shared layout/type system and phone width. Activity now lists the latest 20 texts and replies instead of the placeholder. Settings has a "Coming soon" AI-replies card whose once-per-business "I want this" button writes to `public.ai_reply_interest`. Admin runs on the dark shell (black/gold), every field is labelled, generated links have Copy buttons, and the business listing shows who wants AI replies.
 
@@ -41,14 +42,17 @@
 - **Activity**: owner screen reads the latest 20 `messages` and 20 `replies` directly (RLS-scoped) — no placeholder left.
 - **AI reply interest**: `public.ai_reply_interest` (PK `business_id`, `requested_by`, `created_at`); owners may select/insert their own row, update/delete revoked, so one request per business. `admin_list_businesses()` now returns `ai_replies_requested_at`, which the admin table renders as a gold pill.
 - **Admin theme**: admin uses the same theme as the owner app (light by default, dark when selected); it no longer forces the dark token set.
-- **Auth**: email+password (primary) + magic link (secondary); owners onboarded via `invite` (set-password) link, reset via `recovery` landing on `/set-password`. The login magic-link option is limited to admin emails until client email delivery is set up (`config.auth.signInLinkForEveryone`). Any logged-in user can set/change their password in Settings. "Forgot password?" tells users to contact Mur Systems until reset email exists; until then an operator can mint a recovery link with the admin `generate_link` API. Recovery and expired-link errors are surfaced through `frontend/src/authLink.ts` and the copy in `frontend/src/errors.ts` — never show a raw Supabase/Postgres/Worker message.
+- **Auth**: email+password (primary) + magic link (secondary); owners onboarded via `invite` (set-password) link, reset via `recovery` landing on `/set-password`. The login magic-link option is limited to admin accounts until client email delivery is set up (`config.auth.signInLinkForEveryone`). Admin status comes only from `profiles.role = 'admin'`: the Worker's `/admin/*` guard checks it, the app's Admin tab reads the profile, and the login page asks the rate-limited public `POST /auth/is-admin` (service-role RPC `is_admin_email`). No admin email list ships in the frontend. Any logged-in user can set/change their password in Settings. "Forgot password?" tells users to contact Mur Systems until reset email exists; until then an operator can mint a recovery link with the admin `generate_link` API. Recovery and expired-link errors are surfaced through `frontend/src/authLink.ts` and the copy in `frontend/src/errors.ts` — never show a raw Supabase/Postgres/Worker message.
+- **Legal pages**: `/terms` and `/privacy` render without a session (public paths, SPA fallback already configured) and are linked from the login footer and Settings → Legal. Both are marked **draft for legal review**; Mur Systems is named with ABN 22 545 735 809. They state Supabase storage in Sydney (`ap-southeast-2`), retention periods, client responsibility for real customers/consent, opt-outs and deletion via the Mur Systems account contact.
+- **Logo URL**: storage RLS already confined uploads to `logos/<business id>/`; migration `20261117241000` adds a `businesses` trigger so a non-null `logo_url` must match `https://<host>/storage/v1/object/public/logos/<business id>/<file>` (query string allowed). pgTAP covers own/foreign/external URLs.
 
 ## Env vars & secrets (names only)
-- **Root `.env`**: `SUPABASE_DB_PASSWORD`, `MOBILE_MESSAGE_USERNAME`, `MOBILE_MESSAGE_PASSWORD`, `GOOGLE_PLACES_API_KEY`.
+- **Root `.env`**: `SUPABASE_DB_PASSWORD`, `MOBILE_MESSAGE_USERNAME`, `MOBILE_MESSAGE_PASSWORD`, `GOOGLE_PLACES_API_KEY`, `SMSGATE_DEMO_BASE_URL`, `SMSGATE_DEMO_USERNAME`, `SMSGATE_DEMO_PASSWORD`, `SMSGATE_DEMO_DEVICE_ID`.
 - **Worker vars** (`worker/wrangler.jsonc`): `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SEND_ALLOWLIST`, `LINK_DOMAIN`, `SEND_THROTTLE_MS`, `CORS_ORIGINS`.
-- **Worker secrets** (`wrangler secret put`): `SUPABASE_SERVICE_ROLE_KEY`, `SMSGate_WEBHOOK_SECRET` (optional), `MOBILE_MESSAGE_USERNAME`, `MOBILE_MESSAGE_PASSWORD`, `GOOGLE_PLACES_API_KEY`.
-- **Frontend** (`frontend/.env`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+- **Worker secrets** (`wrangler secret put`): `SUPABASE_SERVICE_ROLE_KEY`, `SMSGATE_WEBHOOK_SECRET` (optional), `MOBILE_MESSAGE_USERNAME`, `MOBILE_MESSAGE_PASSWORD`, `GOOGLE_PLACES_API_KEY`, `SENDER_LIVE`, `PRODUCTION`.
+- **Frontend** (`frontend/.env`): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (public by design).
 - `.env.example` (root) and `worker/.dev.vars.example` document the names.
+- Gateway credentials entered by an owner are stored in `gateway_credentials` (service-role only) and never returned to the browser.
 
 ## Run tests / deploy
 - DB tests: `npm run test:db -- --confirm` (Node pgTAP runner, Docker-free; refuses without `--confirm`).
@@ -58,5 +62,5 @@
 - Deploy frontend: `cd frontend && npm run build && npx wrangler deploy --name mur-reviews`. The live Worker is `mur-reviews`; the Vite config's own name is `frontend`, so pass `--name` or it deploys a second Worker.
 - Cloudflare auth: `cd worker && npx wrangler login --device` (OAuth token expires; device flow avoids the localhost callback). `CLOUDFLARE_ACCOUNT_ID` is `b228d54762c8a6aab17f5d26c8f84d5a`.
 
-## Next step (README)
-Finalise `README.md`: correct the title/brand to "Mur Reviews" (currently "Reviews by Mur Systems"), keep the existing setup steps, and document the AI-replies interest feature and the `GOOGLE_PLACES_API_KEY` optional switch. Then update this file, commit, push.
+## Next step (live send test)
+Do the live-send checklist in `README.md` with your own phone (allowlist → `SENDER_LIVE=true` → cancel dev messages → one text → click → STOP). Then optionally add `GOOGLE_PLACES_API_KEY` and confirm the snapshot cron writes `review_snapshots`. Update this file, commit, push, deploy.

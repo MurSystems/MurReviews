@@ -8,7 +8,7 @@
 - **Repo**: `C:\Claude.projects\mur-reviews` (standalone git repo; NOT the Python `free-claude-code` repo).
 
 ## Pending (in this order)
-1. **Finish dashboard** — Google Places key still needs pasting: `GOOGLE_PLACES_API_KEY` in root `.env`, then set as a Worker secret. Snapshot cron (`0 1 * * *`) and the owner Dashboard screen are built and ready.
+1. **Google review tracking (optional)** — dashboard is finished and works without a key. Add `GOOGLE_PLACES_API_KEY` to root `.env` and `wrangler secret put GOOGLE_PLACES_API_KEY` (piped, never printed) to turn snapshots on; until then `/status` returns `places_connected:false`, the dashboard shows texts/clicks/click-rate and "Google review tracking not connected yet.", and the `0 1 * * *` cron exits cleanly without failing.
 2. **Live send test** — Mobile Message creds into `.env` → set Worker secrets → `GET /v1/senders` (list) → `SENDER_LIVE=true` → `cancel_dev_messages()` (show count) → one text → click → STOP.
 3. **UI pass** — styling/polish (everything is functional but plain).
 4. **README** — finalise (setup steps largely present).
@@ -16,6 +16,7 @@
 ## Decisions made
 - **Stack**: React+Vite PWA · Cloudflare Workers (free) · Supabase Postgres+auth+storage (free).
 - **Places pricing**: `rating` + `userRatingCount` are **Enterprise** fields (Place Details Enterprise), **1,000 free/month**; internal cap **900**. If daily snapshots would exceed it, snapshot less often (frequency = ceil(active×30/900)).
+- **Review tracking is optional**: a missing or blank `GOOGLE_PLACES_API_KEY` disables Places entirely — `GET /status` reports `places_connected:false`, the snapshot cron logs a skip and returns (no failed job), and the dashboard still shows texts/clicks/click-rate plus "Google review tracking not connected yet."
 - **Send modes**: `sms_provider` (default, Mobile Message) · `android_gateway` (SMSGate, optional) · `demo` · `log_only`. Live switch = `SENDER_LIVE` (off). `PRODUCTION` unset. `SEND_ALLOWLIST` = operator's number only.
 - **SMSGate**: cloud relay recommended; E2E (RSA+AES-GCM) **not** implemented (deferred). **Mobile Message**: sender = "own mobile number", verified in dashboard (4-digit code), no documented limit; ACMA Register is for business-name senders only.
 - **Defaults**: delay 60 min · quiet hours 9am–8pm (Melbourne) · reminder at 3 days · `daily_send_cap` (import drip) **15** · `daily_text_cap` **100** · `monthly_text_cap` **500** · `trial_text_cap` **30** · demo send 1/30d per number + 20/day · tokens 8-char base62.
@@ -39,4 +40,4 @@
 - Cloudflare auth: `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` (`b228d54762c8a6aab17f5d26c8f84d5a`).
 
 ## Next step
-Finish the dashboard: paste the Google key into `.env` (Notepad already open), then `wrangler secret put GOOGLE_PLACES_API_KEY` (piped from `.env`, never printed), redeploy, and confirm the snapshot cron records a `review_snapshots` row for the demo business.
+Optional: add the Google key (`GOOGLE_PLACES_API_KEY` in root `.env` → `wrangler secret put GOOGLE_PLACES_API_KEY`, piped from `.env` and never printed → redeploy) and confirm the snapshot cron records a `review_snapshots` row. Otherwise proceed to the live send test.

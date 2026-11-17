@@ -502,6 +502,12 @@ async function handleAdmin(
 
 const MONTHLY_PLACES_CAP = 900; // Place Details Enterprise has 1,000 free/month
 
+// Review tracking is optional: without a Places key the dashboard reports it
+// as not connected and the snapshot cron exits without recording a failure.
+function placesConfigured(env: Env): boolean {
+  return Boolean(env.GOOGLE_PLACES_API_KEY?.trim());
+}
+
 async function fetchPlaceRating(
   env: Env,
   placeId: string,
@@ -522,6 +528,11 @@ async function fetchPlaceRating(
 }
 
 async function runSnapshots(env: Env): Promise<void> {
+  if (!placesConfigured(env)) {
+    console.log("[snapshots] skipped: GOOGLE_PLACES_API_KEY is not set");
+    return;
+  }
+
   const month = new Date().toISOString().slice(0, 7);
   const usage = await supabaseRpc(env, "admin_places_usage", {});
   const used =
@@ -582,6 +593,13 @@ export default {
     const path = url.pathname;
 
     if (path === "/webhook") return handleWebhook(request, env);
+
+    if (path === "/status") {
+      return withCors(
+        Response.json({ places_connected: placesConfigured(env) }),
+        allowOrigin,
+      );
+    }
 
     if (path.startsWith("/admin/")) {
       const admin = await verifyAdmin(request, env);

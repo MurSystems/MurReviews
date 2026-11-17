@@ -42,11 +42,11 @@ const RULES: [RegExp, string][] = [
   [/duplicate key|already exists/i, 'That already exists.'],
   [
     /payload too large|maximum allowed size|file size|too large/i,
-    'That file is too large. Try a smaller one.',
+    'That image is too large. The limit is 1 MB.',
   ],
   [
     /mime|unsupported.*(type|file)|invalid file/i,
-    'That file type isn’t supported.',
+    'Choose a PNG, JPG or WebP image.',
   ],
   [
     /failed to fetch|networkerror|load failed|network request failed|fetch failed/i,

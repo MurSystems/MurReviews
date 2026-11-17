@@ -3,6 +3,7 @@ import { supabase } from './supabase';
 import { config } from './config';
 import { LogoMark } from './components/Logo';
 import ThemeToggle from './components/ThemeToggle';
+import { initials } from './initials';
 import AddCustomer from './screens/AddCustomer';
 import Activity from './screens/Activity';
 import Dashboard from './screens/Dashboard';
@@ -16,16 +17,6 @@ const BASE_SCREENS = [
   { key: 'settings', label: 'Settings', Component: Settings },
 ] as const;
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-}
-
 export default function Shell() {
   const [screen, setScreen] = useState<string>('add');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -36,6 +27,15 @@ export default function Shell() {
     name: string;
     logo_url: string | null;
   } | null>(null);
+
+  function loadBusiness() {
+    supabase
+      .from('businesses')
+      .select('id,name,logo_url')
+      .limit(1)
+      .single()
+      .then(({ data }) => setBusiness(data ?? null));
+  }
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -54,12 +54,10 @@ export default function Shell() {
         .single()
         .then(({ data: p }) => setIsAdmin(p?.role === 'admin'));
     });
-    supabase
-      .from('businesses')
-      .select('id,name,logo_url')
-      .limit(1)
-      .single()
-      .then(({ data }) => setBusiness(data ?? null));
+    loadBusiness();
+    const onLogoChanged = () => loadBusiness();
+    window.addEventListener('mur-logo-changed', onLogoChanged);
+    return () => window.removeEventListener('mur-logo-changed', onLogoChanged);
   }, []);
 
   function dismissWhatsNew() {

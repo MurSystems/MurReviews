@@ -4,6 +4,10 @@ import { supabase } from '../supabase';
 import { friendlyError } from '../errors';
 import { saveTheme } from '../theme';
 import { useTheme } from '../useTheme';
+import { initials } from '../initials';
+
+const MAX_LOGO_BYTES = 1024 * 1024;
+const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
 function parseCsv(text: string): string[][] {
   return text
@@ -44,7 +48,11 @@ type Summary = {
 };
 
 export default function Settings() {
-  const [business, setBusiness] = useState<{ id: string; logo_url: string | null } | null>(null);
+  const [business, setBusiness] = useState<{
+    id: string;
+    name: string;
+    logo_url: string | null;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [interest, setInterest] = useState<'loading' | 'no' | 'yes'>('loading');
@@ -62,7 +70,7 @@ export default function Settings() {
   useEffect(() => {
     supabase
       .from('businesses')
-      .select('id,logo_url')
+      .select('id,name,logo_url')
       .limit(1)
       .single()
       .then(({ data }) => {
@@ -86,6 +94,14 @@ export default function Settings() {
 
   async function onUpload(file: File) {
     if (!business) return;
+    if (!LOGO_TYPES.includes(file.type)) {
+      show('error', 'Choose a PNG, JPG or WebP image.');
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      show('error', 'That image is too large. The limit is 1 MB.');
+      return;
+    }
     setBusy(true);
     setNotice(null);
     const path = `${business.id}/logo`;
@@ -98,16 +114,20 @@ export default function Settings() {
       return;
     }
     const { data } = supabase.storage.from('logos').getPublicUrl(path);
+    // A versioned URL means a replaced logo shows immediately, even if the
+    // browser cached the previous image at the same path.
+    const url = `${data.publicUrl}?v=${Date.now()}`;
     const { error: updErr } = await supabase
       .from('businesses')
-      .update({ logo_url: data.publicUrl })
+      .update({ logo_url: url })
       .eq('id', business.id);
     if (updErr) {
       show('error', friendlyError(updErr.message));
       setBusy(false);
       return;
     }
-    setBusiness({ ...business, logo_url: data.publicUrl });
+    setBusiness({ ...business, logo_url: url });
+    window.dispatchEvent(new Event('mur-logo-changed'));
     show('ok', 'Logo updated.');
     setBusy(false);
   }
@@ -116,9 +136,23 @@ export default function Settings() {
     if (!business) return;
     setBusy(true);
     setNotice(null);
-    await supabase.storage.from('logos').remove([`${business.id}/logo`]);
-    await supabase.from('businesses').update({ logo_url: null }).eq('id', business.id);
+    const { error: rmErr } = await supabase.storage.from('logos').remove([`${business.id}/logo`]);
+    if (rmErr) {
+      show('error', friendlyError(rmErr.message));
+      setBusy(false);
+      return;
+    }
+    const { error: updErr } = await supabase
+      .from('businesses')
+      .update({ logo_url: null })
+      .eq('id', business.id);
+    if (updErr) {
+      show('error', friendlyError(updErr.message));
+      setBusy(false);
+      return;
+    }
     setBusiness({ ...business, logo_url: null });
+    window.dispatchEvent(new Event('mur-logo-changed'));
     show('ok', 'Logo removed.');
     setBusy(false);
   }
@@ -280,21 +314,27 @@ export default function Settings() {
         <p className="muted" style={{ margin: 0 }}>
           Shown in your header and on review pages.
         </p>
-        {business?.logo_url && (
-          <img
-            src={business.logo_url}
-            alt="Your business logo"
-            style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover' }}
-          />
-        )}
+        {business &&
+          (business.logo_url ? (
+            <img
+              src={business.logo_url}
+              alt="Your business logo"
+              style={{ width: 72, height: 72, borderRadius: '50%', objectFit: 'cover' }}
+            />
+          ) : (
+            <span className="badge" style={{ width: 72, height: 72, fontSize: 24 }}>
+              {initials(business.name)}
+            </span>
+          ))}
         <label className="field">
-          <span>Logo image (PNG, JPG or WebP)</span>
+          <span>Logo image (PNG, JPG or WebP, max 1 MB)</span>
           <input
             type="file"
             accept="image/png,image/jpeg,image/webp"
             disabled={busy}
             onChange={(e) => {
               const f = e.target.files?.[0];
+              e.target.value = '';
               if (f) onUpload(f);
             }}
           />

@@ -148,9 +148,11 @@ You need: the business name, its Google **Place ID**, and the owner's email.
    The status turns **Connected** after the phone checks in, with a "last seen"
    time. The optional Device ID enables STOP-reply handling.
 4. **Send a test text.** Still in Settings, the owner enters their own mobile
-   and presses **Send test text**. While `PRODUCTION` is not `true`, only
-   numbers on `SEND_ALLOWLIST` are allowed. Confirm the text arrives, tap the
-   review link, and confirm the click appears in Activity.
+   and presses **Send test text** (Android gateway). An admin can instead use
+   **Admin → Businesses → Send test now**, which works for any send mode and
+   sends immediately, outside quiet hours and the delay. While `PRODUCTION` is
+   not `true`, only numbers on `SEND_ALLOWLIST` are allowed. Confirm the text
+   arrives, tap the review link, and confirm the click appears in Activity.
 
 The SMSGate credentials are stored in `gateway_credentials` (service-role only)
 and are never returned to the browser.
@@ -164,8 +166,12 @@ Do this once, with your own phone, before real customer traffic:
       gateway credentials as needed.
 - [ ] Your own mobile is on `SEND_ALLOWLIST`; `SENDER_LIVE` is unset.
 - [ ] Run `cancel_dev_messages()` (service role) and note the count returned.
-- [ ] Set `SENDER_LIVE=true` (`wrangler secret put SENDER_LIVE`).
-- [ ] Send one text to your own number; confirm it arrives.
+- [ ] Set `SENDER_LIVE=true` (`wrangler secret put SENDER_LIVE`). `GET /status`
+      reports `sender_live` so you can confirm it without reading the secret.
+- [ ] Send one text to your own number; confirm it arrives. In **Admin →
+      Businesses**, **Send test now** beside the business sends immediately,
+      outside quiet hours and the delay, and is recorded as `mock` so it never
+      counts towards usage or stats.
 - [ ] Tap the review link; confirm the click is recorded and Google opens.
 - [ ] Reply `STOP`; confirm the number appears as opted out and receives no
       further texts.

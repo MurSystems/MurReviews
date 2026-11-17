@@ -1,6 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   isAllowed,
+  isAllowlisted,
   isMockSend,
   verifyHmacSignature,
   verifyAdminJwt,
@@ -529,6 +530,114 @@ async function handleAdmin(
       });
       return Response.json({ ok: true });
     }
+    if (
+      path.startsWith("/admin/businesses/") &&
+      path.endsWith("/send-test-now") &&
+      method === "POST"
+    ) {
+      const id = path.split("/")[3];
+      const allowlist = (env.SEND_ALLOWLIST ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (allowlist.length === 0) {
+        return Response.json(
+          { error: "No allowlisted test number is configured." },
+          { status: 400 },
+        );
+      }
+
+      const body = (await request.json().catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      const requested =
+        typeof body.mobile === "string" && body.mobile.trim()
+          ? body.mobile
+          : allowlist[0];
+      const mobile = normaliseAuMobile(requested);
+      if (!mobile || !isAllowlisted(mobile, allowlist)) {
+        return Response.json(
+          { error: "The test text can only go to a number on SEND_ALLOWLIST." },
+          { status: 403 },
+        );
+      }
+
+      const stub = env.RATE_LIMITER.get(
+        env.RATE_LIMITER.idFromName(`admin-test:${userId}`),
+      );
+      if (!(await stub.check(5, 3600_000))) {
+        return Response.json(
+          { error: "Too many test texts. Wait a while and try again." },
+          { status: 429 },
+        );
+      }
+
+      const rows = await supabaseRpc(env, "admin_create_test_message", {
+        p_business_id: id,
+        p_mobile: mobile,
+        p_admin_id: userId,
+      });
+      const created = Array.isArray(rows) ? rows[0] : rows;
+      if (!created?.message_id) {
+        throw new Error("test message was not created");
+      }
+
+      const prepRows = await supabaseRpc(env, "prepare_send", {
+        p_message_id: created.message_id,
+        p_link_domain: env.LINK_DOMAIN,
+      });
+      const prep = prepRows?.[0];
+      if (!prep || !isAllowlisted(prep.mobile, allowlist)) {
+        await supabaseRpc(env, "mark_failed", {
+          p_message_id: created.message_id,
+          p_error: "test recipient not allowlisted",
+          p_retryable: false,
+        });
+        return Response.json(
+          { error: "The test text can only go to a number on SEND_ALLOWLIST." },
+          { status: 403 },
+        );
+      }
+
+      // Test sends still respect the global live switch. mark_sent always
+      // records mock=true so a test never counts in usage or stats.
+      const live = prep.send_mode !== "log_only" && env.SENDER_LIVE === "true";
+      try {
+        await sendSms(
+          env,
+          prep.send_mode,
+          prep.mobile,
+          prep.rendered_text,
+          prep.business_id,
+          prep.sender_number,
+        );
+        await supabaseRpc(env, "mark_sent", {
+          p_message_id: created.message_id,
+          p_text: prep.rendered_text,
+          p_mock: true,
+        });
+        return Response.json({
+          ok: true,
+          message_id: created.message_id,
+          mobile: prep.mobile,
+          send_mode: prep.send_mode,
+          live,
+          text: prep.rendered_text,
+        });
+      } catch (e) {
+        console.log(`[admin-test] send failed for ${id}: ${String(e)}`);
+        await supabaseRpc(env, "mark_failed", {
+          p_message_id: created.message_id,
+          p_error: String(e),
+          p_retryable: true,
+        });
+        return Response.json(
+          { error: "The test text could not be sent." },
+          { status: 502 },
+        );
+      }
+    }
     if (path === "/admin/demo-send" && method === "POST") {
       const body = (await request.json()) as Record<string, any>;
       const rows = await supabaseRpc(env, "admin_demo_send", {
@@ -767,7 +876,10 @@ export default {
 
     if (path === "/status") {
       return withCors(
-        Response.json({ places_connected: placesConfigured(env) }),
+        Response.json({
+          places_connected: placesConfigured(env),
+          sender_live: env.SENDER_LIVE === "true",
+        }),
         allowOrigin,
       );
     }

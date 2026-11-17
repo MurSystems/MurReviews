@@ -9,6 +9,12 @@ export function isAllowed(
   return production === "true" || mode === "log_only" || allowlist.includes(mobile);
 }
 
+// Admin test sends must always go to an allowlisted number, even when the
+// Worker is in production (PRODUCTION=true disables isAllowed's bypass).
+export function isAllowlisted(mobile: string, allowlist: string[]): boolean {
+  return allowlist.includes(mobile);
+}
+
 // A send that never reaches a real handset: log_only always, and every mode
 // while the live switch is off. These must be recorded with messages.mock=true
 // so they never count as real sends in stats.

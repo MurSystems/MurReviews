@@ -235,6 +235,21 @@ export default function AdminScreen() {
     }
   }
 
+  async function onSendTestNow(id: string, name: string) {
+    setNotice(null);
+    try {
+      const r = await adminFetch(`/admin/businesses/${id}/send-test-now`, 'POST', {});
+      setNotice({
+        kind: 'ok',
+        text: r?.live
+          ? `Live test text sent to ${r.mobile} for ${name}.`
+          : `Test recorded for ${name} to ${r.mobile}, but live sending is off (SENDER_LIVE is not true), so no text was sent.`,
+      });
+    } catch (err) {
+      showError(err);
+    }
+  }
+
   async function onGenerateLink(e: FormEvent) {
     e.preventDefault();
     const form = e.currentTarget as HTMLFormElement;
@@ -445,6 +460,10 @@ export default function AdminScreen() {
               <p className="muted" style={{ marginTop: 0 }}>
                 {businesses.length} total · {interested} want AI replies.
               </p>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Send test now texts the allowlisted number immediately, ignoring quiet hours and the
+                delay. It is not counted in usage or stats.
+              </p>
               <div className="table-wrap">
                 <table>
                   <thead>
@@ -529,6 +548,13 @@ export default function AdminScreen() {
                             </button>
                             <button className="ghost" type="button" onClick={() => onViewAs(b.id, b.name)}>
                               View
+                            </button>
+                            <button
+                              className="ghost"
+                              type="button"
+                              onClick={() => onSendTestNow(b.id, b.name)}
+                            >
+                              Send test now
                             </button>
                             {b.owner_email && (
                               <button

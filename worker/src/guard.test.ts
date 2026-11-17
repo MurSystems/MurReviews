@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   isAllowed,
+  isAllowlisted,
   isMockSend,
   verifyHmacSignature,
   verifyAdminJwt,
@@ -27,6 +28,14 @@ describe("isAllowed", () => {
   });
   it("treats non-'true' production as non-production", () => {
     expect(isAllowed("demo", "+61499999999", "TRUE", [])).toBe(false);
+  });
+});
+
+describe("isAllowlisted", () => {
+  it("accepts only a number on the allowlist", () => {
+    expect(isAllowlisted("+61411875278", ["+61411875278"])).toBe(true);
+    expect(isAllowlisted("+61411875278", ["+61499999999"])).toBe(false);
+    expect(isAllowlisted("+61411875278", [])).toBe(false);
   });
 });
 

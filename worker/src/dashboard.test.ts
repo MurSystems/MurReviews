@@ -37,7 +37,10 @@ describe("review tracking without GOOGLE_PLACES_API_KEY", () => {
       ...baseEnv,
       GOOGLE_PLACES_API_KEY: "   ",
     } as Env);
-    expect(await res.json()).toEqual({ places_connected: false });
+    expect(await res.json()).toEqual({
+      places_connected: false,
+      sender_live: false,
+    });
   });
 
   it("reports review tracking as not connected", async () => {
@@ -46,7 +49,10 @@ describe("review tracking without GOOGLE_PLACES_API_KEY", () => {
       baseEnv,
     );
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ places_connected: false });
+    expect(await res.json()).toEqual({
+      places_connected: false,
+      sender_live: false,
+    });
   });
 
   it("reports connected once the key is set", async () => {
@@ -56,7 +62,10 @@ describe("review tracking without GOOGLE_PLACES_API_KEY", () => {
       }),
       { ...baseEnv, GOOGLE_PLACES_API_KEY: "places-key" } as Env,
     );
-    expect(await res.json()).toEqual({ places_connected: true });
+    expect(await res.json()).toEqual({
+      places_connected: true,
+      sender_live: false,
+    });
     expect(res.headers.get("access-control-allow-origin")).toBe(
       "https://app.example.com",
     );

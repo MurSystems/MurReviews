@@ -241,8 +241,20 @@ Both are marked as drafts until reviewed by a lawyer.
 ## Hosting notes
 
 - The frontend is a Cloudflare Worker with static assets, not a Pages project.
-- `LINK_DOMAIN` currently points at the Worker dev address; swap it for a custom
-  short domain when one exists.
+- **Custom link domain.** `LINK_DOMAIN` is the only setting for the address in
+  every text — review links (`/r/{token}`) and opt-out links (`/o/{token}`).
+  It is currently `https://m.mursystems123.workers.dev`. When a short domain is
+  bought:
+  1. Add the domain to Cloudflare (it must be a zone on the same account).
+  2. Point the Worker at it: `cd worker && npx wrangler deploy` plus a custom
+     domain for the `m` Worker — in the dashboard open Workers & Pages → `m` →
+     Settings → Domains & Routes → **Add custom domain** and enter e.g.
+     `mur.au` (or add a `routes` entry in `worker/wrangler.jsonc`).
+  3. Change `LINK_DOMAIN` in `worker/wrangler.jsonc` to `https://mur.au` and run
+     `cd worker && npx wrangler deploy`. That one value changes every new text.
+  4. Texts already queued keep the link rendered at send time, and links already
+     sent keep working because the old Worker address stays live. Shorter
+     domains shorten every text; update the README/HANDOFF note above once done.
 - Supabase's built-in auth email is limited to 2 messages/hour and only to
   project organisation members. Before clients use emailed links, configure
   custom SMTP in Supabase Auth.

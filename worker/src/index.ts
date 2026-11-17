@@ -657,6 +657,7 @@ async function handleAdmin(
         p_admin_id: userId,
         p_review_count: reviewCount,
         p_sender_number: body.sender_number ? String(body.sender_number) : null,
+        p_sender_name: body.sender_name ? String(body.sender_name) : null,
       });
       return Response.json({ ...(rows?.[0] ?? {}), login_link: loginLink });
     }
@@ -717,6 +718,46 @@ async function handleAdmin(
         p_admin_id: userId,
       });
       return Response.json({ ok: true, sender_number: sender });
+    }
+    if (
+      path.startsWith("/admin/businesses/") &&
+      path.endsWith("/sender-name") &&
+      method === "POST"
+    ) {
+      const id = path.split("/")[3];
+      const body = (await request.json()) as Record<string, any>;
+      const name = String(body.sender_name ?? "").trim();
+      if (name.length > 40) {
+        return Response.json(
+          { error: "Keep the sender name to 40 characters or fewer." },
+          { status: 400 },
+        );
+      }
+      await supabaseRpc(env, "admin_set_sender_name", {
+        p_business_id: id,
+        p_sender_name: name || null,
+        p_admin_id: userId,
+      });
+      return Response.json({ ok: true, sender_name: name || null });
+    }
+    if (
+      path.startsWith("/admin/businesses/") &&
+      path.endsWith("/message-example") &&
+      method === "GET"
+    ) {
+      const id = path.split("/")[3];
+      const rows = await supabaseRpc(env, "admin_preview_message", {
+        p_business_id: id,
+        p_link_domain: env.LINK_DOMAIN,
+      });
+      const row = Array.isArray(rows) ? rows[0] : null;
+      if (!row) {
+        return Response.json(
+          { error: "Could not build an example text for this business." },
+          { status: 400 },
+        );
+      }
+      return Response.json(row);
     }
     if (
       path.startsWith("/admin/businesses/") &&

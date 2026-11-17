@@ -131,6 +131,7 @@ type Business = {
   reviews_gained: number | null;
   last_snapshot_date: string | null;
   sender_number: string | null;
+  sender_name: string | null;
   sender_verified_at: string | null;
   sender_checked_at: string | null;
   tests_count: number;
@@ -325,6 +326,7 @@ export default function AdminScreen() {
         owner_email: String(fd.get('owner_email') ?? '').trim(),
         review_count: String(fd.get('review_count') ?? '').trim() || null,
         sender_number: String(fd.get('sender_number') ?? '').trim() || null,
+        sender_name: String(fd.get('sender_name') ?? '').trim() || null,
       });
       form.reset();
       setNewPlaceId('');
@@ -398,6 +400,40 @@ export default function AdminScreen() {
       });
       setNotice({ kind: 'ok', text: 'Sender mobile saved. Press Check again to verify it.' });
       refresh();
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function onSetSenderName(e: FormEvent) {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const fd = new FormData(form);
+    const id = String(fd.get('business_id') ?? '');
+    setNotice(null);
+    try {
+      await adminFetch(`/admin/businesses/${id}/sender-name`, 'POST', {
+        sender_name: String(fd.get('sender_name') ?? '').trim(),
+      });
+      setNotice({ kind: 'ok', text: 'Sender name saved.' });
+      refresh();
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function onShowExample(id: string, name: string) {
+    setNotice(null);
+    try {
+      const r = await adminFetch(`/admin/businesses/${id}/message-example`);
+      const length = Number(r?.gsm7_length ?? 0);
+      const segments = Number(r?.segments ?? 1);
+      setNotice({
+        kind: 'ok',
+        text: `Text for ${name} — ${length} characters, ${
+          segments === 1 ? '1 text' : `${segments} texts`
+        }: “${r?.example_text ?? ''}”`,
+      });
     } catch (err) {
       showError(err);
     }
@@ -714,6 +750,14 @@ export default function AdminScreen() {
                 Live sending stays off until this number is verified in Mobile Message.
               </p>
               <label className="field">
+                <span>Sender name (owner’s first name)</span>
+                <input name="sender_name" placeholder="e.g. Azlaan" />
+              </label>
+              <p className="field-note">
+                Texts say “Hi Mia, it’s Azlaan from Mur Demo.” Leave it blank and they read
+                “Hi Mia from Mur Demo.”
+              </p>
+              <label className="field">
                 <span>Review request delay (minutes)</span>
                 <input name="delay" type="number" min={0} defaultValue={60} />
               </label>
@@ -920,6 +964,19 @@ export default function AdminScreen() {
                           ) : (
                             <span>{b.gateway_online ? 'online' : 'offline'}</span>
                           )}
+                          <form onSubmit={onSetSenderName} className="row">
+                            <input type="hidden" name="business_id" value={b.id} />
+                            <input
+                              name="sender_name"
+                              defaultValue={b.sender_name ?? ''}
+                              placeholder="Sender name"
+                              aria-label={`Sender name for ${b.name}`}
+                              style={{ width: 115 }}
+                            />
+                            <button className="ghost" type="submit">
+                              Save name
+                            </button>
+                          </form>
                         </td>
                         <td>
                           <span className="hint" style={{ margin: 0 }}>
@@ -958,6 +1015,13 @@ export default function AdminScreen() {
                               onClick={() => onViewAs(b.id, b.name, b.send_mode)}
                             >
                               View
+                            </button>
+                            <button
+                              className="ghost"
+                              type="button"
+                              onClick={() => onShowExample(b.id, b.name)}
+                            >
+                              Show text
                             </button>
                             <button
                               className="ghost"

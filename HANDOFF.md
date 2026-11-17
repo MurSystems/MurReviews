@@ -20,6 +20,8 @@
 
 **Done 2026-11-17 (Theme toggle, Session 4)**: Theme now follows the device's light/dark setting until the user chooses. A small sun/moon switch sits in the login page's top corner and in the app header on every screen (owner and admin); Settings keeps the Light/Dark buttons. Choosing saves `mur-theme` on that device and applies live (`html.dark`, PWA `theme-color`). `initTheme()` keeps following the device only while no choice is saved; `useTheme()` keeps the header, login and Settings in sync. Both themes were checked with Playwright screenshots at phone width: login, Add, Activity, Dashboard, Settings and Admin.
 
+**Done 2026-11-17 (Auth recovery, Session 5)**: Added `frontend/src/auth/SetPassword.tsx` and `frontend/src/authLink.ts`. Recovery links land on `/set-password` (SPA fallback already configured); `App` also switches to it on `PASSWORD_RECOVERY`, so older links that redirect to the root still work. Saving calls `updateUser({password})` and drops straight into the app on the recovery session. Stale/used links (`#error_code=…`, e.g. `otp_expired`) now show a friendly "link has expired" message on login instead of bouncing silently. Supabase Auth redirect allow-list includes `…/set-password` for localhost and the deployed origin. Diagnosis from the auth logs: not an email rate limit and not a disallowed redirect — `GET /verify` at 05:15:34Z returned `403 One-time token not found` (clicked link already used/expired); the 05:13:51Z recovery email was sent but never used, and the app had no recovery screen. A fresh admin recovery link (not emailed) was generated for `mursystems123@gmail.com` pointing at `/set-password`.
+
 ## Decisions made
 - **Stack**: React+Vite PWA · Cloudflare Workers (free) · Supabase Postgres+auth+storage (free).
 - **Places pricing**: `rating` + `userRatingCount` are **Enterprise** fields (Place Details Enterprise), **1,000 free/month**; internal cap **900**. If daily snapshots would exceed it, snapshot less often (frequency = ceil(active×30/900)).
@@ -35,7 +37,7 @@
 - **Activity**: owner screen reads the latest 20 `messages` and 20 `replies` directly (RLS-scoped) — no placeholder left.
 - **AI reply interest**: `public.ai_reply_interest` (PK `business_id`, `requested_by`, `created_at`); owners may select/insert their own row, update/delete revoked, so one request per business. `admin_list_businesses()` now returns `ai_replies_requested_at`, which the admin table renders as a gold pill.
 - **Admin theme**: admin uses the same theme as the owner app (light by default, dark when selected); it no longer forces the dark token set.
-- **Auth**: email+password (primary) + magic link (secondary); owners onboarded via `invite` (set-password) link, reset via `recovery`. The login magic-link option is limited to admin emails until client email delivery is set up (`config.auth.signInLinkForEveryone`). Any logged-in user can set/change their password in Settings. "Forgot password?" tells users to contact Mur Systems until reset email exists. Error copy is mapped in `frontend/src/errors.ts` — never show a raw Supabase/Postgres/Worker message.
+- **Auth**: email+password (primary) + magic link (secondary); owners onboarded via `invite` (set-password) link, reset via `recovery` landing on `/set-password`. The login magic-link option is limited to admin emails until client email delivery is set up (`config.auth.signInLinkForEveryone`). Any logged-in user can set/change their password in Settings. "Forgot password?" tells users to contact Mur Systems until reset email exists; until then an operator can mint a recovery link with the admin `generate_link` API. Recovery and expired-link errors are surfaced through `frontend/src/authLink.ts` and the copy in `frontend/src/errors.ts` — never show a raw Supabase/Postgres/Worker message.
 
 ## Env vars & secrets (names only)
 - **Root `.env`**: `SUPABASE_DB_PASSWORD`, `MOBILE_MESSAGE_USERNAME`, `MOBILE_MESSAGE_PASSWORD`, `GOOGLE_PLACES_API_KEY`.
@@ -52,5 +54,5 @@
 - Deploy frontend: `cd frontend && npm run build && npx wrangler deploy --name mur-reviews`. The live Worker is `mur-reviews`; the Vite config's own name is `frontend`, so pass `--name` or it deploys a second Worker.
 - Cloudflare auth: `cd worker && npx wrangler login --device` (OAuth token expires; device flow avoids the localhost callback). `CLOUDFLARE_ACCOUNT_ID` is `b228d54762c8a6aab17f5d26c8f84d5a`.
 
-## Next step (Session 5 — README)
+## Next step (Session 6 — README)
 Finalise `README.md`: correct the title/brand to "Mur Reviews" (currently "Reviews by Mur Systems"), keep the existing setup steps, and document the AI-replies interest feature and the `GOOGLE_PLACES_API_KEY` optional switch. Then update this file, commit, push.

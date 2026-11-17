@@ -10,12 +10,12 @@ function validEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-export default function Login() {
+export default function Login({ linkError = '' }: { linkError?: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [sent, setSent] = useState(false);
   const [forgot, setForgot] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(linkError);
   const [busy, setBusy] = useState(false);
 
   const canUseSignInLink =

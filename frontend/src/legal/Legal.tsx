@@ -87,7 +87,7 @@ function TermsBody() {
 
       <h2>5. Message limits and fair use</h2>
       <p>
-        Month to month, no lock-in contract. Cancel anytime. Includes 500 texts
+        Month to month, no lock-in contract. Cancel anytime. Includes 200 texts
         per month.
       </p>
       <p>

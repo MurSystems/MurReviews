@@ -4,7 +4,7 @@
 -- ============================================================================
 
 create extension if not exists pgtap with schema extensions;
-select plan(19);
+select plan(20);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000a101', 'owner@allowance.test'),
@@ -22,10 +22,10 @@ select is(
   'the reset date is midnight on the 1st of the next month'
 );
 
--- Warning business: 500 allowance, 400 real sends this month.
+-- Warning business: 200 allowance, 160 real sends this month.
 insert into public.businesses (id, name, place_id, status, owner_id, monthly_text_cap, daily_text_cap)
 values ('00000000-0000-0000-0000-00000000a102', 'Allowance Biz', 'place-allow', 'active',
-        '00000000-0000-0000-0000-00000000a101', 500, 1000);
+        '00000000-0000-0000-0000-00000000a101', 200, 1000);
 
 insert into public.customers (id, business_id, first_name, mobile)
 values ('00000000-0000-0000-0000-00000000a103', '00000000-0000-0000-0000-00000000a102', 'Mia', '+61491570006');
@@ -33,7 +33,7 @@ values ('00000000-0000-0000-0000-00000000a103', '00000000-0000-0000-0000-0000000
 insert into public.messages (business_id, customer_id, status, token, scheduled_at, sent_at)
 select '00000000-0000-0000-0000-00000000a102', '00000000-0000-0000-0000-00000000a103',
        'sent', 'allow-warn-' || g, now(), now()
-  from generate_series(1, 400) g;
+  from generate_series(1, 160) g;
 
 select is(
   (select state from public.business_text_usage('00000000-0000-0000-0000-00000000a102')),
@@ -42,7 +42,7 @@ select is(
 );
 select is(
   (select used from public.business_text_usage('00000000-0000-0000-0000-00000000a102')),
-  400::bigint,
+  160::bigint,
   'usage counts real sends this month'
 );
 
@@ -52,15 +52,15 @@ values ('00000000-0000-0000-0000-00000000a102', '00000000-0000-0000-0000-0000000
         'sent', 'allow-mock', now(), now(), true);
 select is(
   (select used from public.business_text_usage('00000000-0000-0000-0000-00000000a102')),
-  400::bigint,
+  160::bigint,
   'mock sends do not count towards the allowance'
 );
 
--- 6-7. Reaching 500 pauses sending.
+-- 6-7. Reaching 200 pauses sending.
 insert into public.messages (business_id, customer_id, status, token, scheduled_at, sent_at)
 select '00000000-0000-0000-0000-00000000a102', '00000000-0000-0000-0000-00000000a103',
        'sent', 'allow-full-' || g, now(), now()
-  from generate_series(1, 100) g;
+  from generate_series(1, 40) g;
 
 select is(
   (select state from public.business_text_usage('00000000-0000-0000-0000-00000000a102')),
@@ -69,7 +69,7 @@ select is(
 );
 select is(
   (select used from public.business_text_usage('00000000-0000-0000-0000-00000000a102')),
-  500::bigint,
+  200::bigint,
   'usage reaches the allowance'
 );
 
@@ -88,7 +88,7 @@ select is(
 -- 9-11. A send from last month does not count after the reset.
 insert into public.businesses (id, name, place_id, status, owner_id, monthly_text_cap)
 values ('00000000-0000-0000-0000-00000000a104', 'Reset Biz', 'place-reset', 'active',
-        '00000000-0000-0000-0000-00000000a101', 500);
+        '00000000-0000-0000-0000-00000000a101', 200);
 
 insert into public.customers (id, business_id, first_name, mobile)
 values ('00000000-0000-0000-0000-00000000a105', '00000000-0000-0000-0000-00000000a104', 'Sam', '+61491570007');
@@ -179,6 +179,17 @@ select ok(
              and details->>'business_id' = '00000000-0000-0000-0000-00000000a102'
              and details->>'monthly_text_cap' = '1000'),
   'changing an allowance is recorded in the audit log'
+);
+
+-- 20. A business created without an allowance gets the 200 default.
+insert into public.businesses (id, name, place_id, status, owner_id)
+values ('00000000-0000-0000-0000-00000000a108', 'Default Biz', 'place-default', 'active',
+        '00000000-0000-0000-0000-00000000a101');
+
+select is(
+  (select monthly_text_cap from public.businesses where id = '00000000-0000-0000-0000-00000000a108'),
+  200,
+  'new businesses default to 200 texts per month'
 );
 
 select * from finish();

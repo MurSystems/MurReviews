@@ -109,10 +109,33 @@ type ActivityData = {
     status: string;
     mock: boolean | null;
     message_text: string | null;
+    clicked_at: string | null;
+    last_error: string | null;
     customers: { first_name: string; mobile: string } | { first_name: string; mobile: string }[] | null;
   }[];
-  replies: { id: string; from_mobile: string; body: string }[];
+  replies: {
+    id: string;
+    from_mobile: string;
+    body: string;
+    customers: { first_name: string } | { first_name: string }[] | null;
+  }[];
 };
+
+const ACTIVITY_STATUS_LABEL: Record<string, string> = {
+  queued: 'Queued',
+  sending: 'Sending',
+  sent: 'Sent',
+  clicked: 'Link opened',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+  opted_out: 'Opted out',
+  skipped: 'Skipped',
+};
+
+function activityStatus(message: ActivityData['messages'][number]): string {
+  if (message.clicked_at) return 'Link opened';
+  return ACTIVITY_STATUS_LABEL[message.status] ?? message.status;
+}
 
 type Notice = {
   kind: 'ok' | 'error';
@@ -369,9 +392,12 @@ export default function AdminScreen() {
                             {m.mock ? ' (test)' : ''}
                           </span>
                           <span className="item-sub">
-                            {m.status}
+                            {activityStatus(m)}
                             {m.message_text ? ` · ${m.message_text}` : ''}
                           </span>
+                          {m.status === 'failed' && m.last_error && (
+                            <span className="item-sub">{m.last_error}</span>
+                          )}
                         </li>
                       );
                     })}
@@ -384,12 +410,17 @@ export default function AdminScreen() {
                   <p className="empty">No replies yet.</p>
                 ) : (
                   <ul className="list">
-                    {activity.replies.map((r) => (
-                      <li key={r.id}>
-                        <span className="item-title">{r.body}</span>
-                        <span className="item-sub">{r.from_mobile}</span>
-                      </li>
-                    ))}
+                    {activity.replies.map((r) => {
+                      const customer = Array.isArray(r.customers) ? r.customers[0] : r.customers;
+                      return (
+                        <li key={r.id}>
+                          <span className="item-title">{r.body}</span>
+                          <span className="item-sub">
+                            {customer?.first_name ?? 'Customer'} · {r.from_mobile}
+                          </span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </section>

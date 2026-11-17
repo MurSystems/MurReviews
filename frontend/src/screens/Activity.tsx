@@ -6,6 +6,8 @@ type Message = {
   status: string;
   mock: boolean | null;
   sent_at: string | null;
+  clicked_at: string | null;
+  last_error: string | null;
   created_at: string;
   customers: { first_name: string } | { first_name: string }[] | null;
 };
@@ -15,6 +17,7 @@ type Reply = {
   from_mobile: string;
   body: string;
   received_at: string;
+  customers: { first_name: string } | { first_name: string }[] | null;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -23,12 +26,24 @@ const STATUS_LABEL: Record<string, string> = {
   sent: 'Sent',
   clicked: 'Link opened',
   failed: 'Failed',
+  cancelled: 'Cancelled',
+  opted_out: 'Opted out',
   skipped: 'Skipped',
 };
 
-function firstNameOf(message: Message): string {
-  const customer = Array.isArray(message.customers) ? message.customers[0] : message.customers;
-  return customer?.first_name || 'Customer';
+function statusLabel(message: Message): string {
+  // clicked_at is the source of truth: older rows recorded the click without
+  // moving the status off 'sent'.
+  if (message.clicked_at) return 'Link opened';
+  return STATUS_LABEL[message.status] ?? message.status;
+}
+
+function customerName(
+  customer: { first_name: string } | { first_name: string }[] | null,
+  fallback: string,
+): string {
+  const row = Array.isArray(customer) ? customer[0] : customer;
+  return row?.first_name || fallback;
 }
 
 function formatWhen(iso: string | null): string {
@@ -46,6 +61,7 @@ function formatWhen(iso: string | null): string {
 export default function Activity() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [replies, setReplies] = useState<Reply[]>([]);
+  const [sendMode, setSendMode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -54,7 +70,7 @@ export default function Activity() {
     (async () => {
       const { data: business, error: businessError } = await supabase
         .from('businesses')
-        .select('id')
+        .select('id,send_mode')
         .limit(1)
         .single();
       if (!business?.id || businessError) {
@@ -67,13 +83,15 @@ export default function Activity() {
       const [messagesResult, repliesResult] = await Promise.all([
         supabase
           .from('messages')
-          .select('id,status,mock,sent_at,created_at,customers(first_name)')
+          .select(
+            'id,status,mock,sent_at,clicked_at,last_error,created_at,customers(first_name)',
+          )
           .eq('business_id', business.id)
           .order('created_at', { ascending: false })
           .limit(20),
         supabase
           .from('replies')
-          .select('id,from_mobile,body,received_at')
+          .select('id,from_mobile,body,received_at,customers(first_name)')
           .eq('business_id', business.id)
           .order('received_at', { ascending: false })
           .limit(20),
@@ -82,6 +100,7 @@ export default function Activity() {
       if (messagesResult.error || repliesResult.error) {
         setError('We couldn’t load your activity. Try again in a moment.');
       } else {
+        setSendMode(business.send_mode ?? null);
         setMessages((messagesResult.data as Message[]) ?? []);
         setReplies((repliesResult.data as Reply[]) ?? []);
       }
@@ -91,6 +110,8 @@ export default function Activity() {
       cancelled = true;
     };
   }, []);
+
+  const fromOwnPhone = sendMode === 'android_gateway';
 
   return (
     <div className="page">
@@ -113,15 +134,18 @@ export default function Activity() {
                 {messages.map((m) => (
                   <li key={m.id}>
                     <span className="item-title">
-                      {firstNameOf(m)}
+                      {customerName(m.customers, 'Customer')}
                       {m.mock ? ' (test)' : ''}
                     </span>
                     <span className="item-sub">
-                      {STATUS_LABEL[m.status] ?? m.status}
+                      {statusLabel(m)}
                       {formatWhen(m.sent_at ?? m.created_at)
                         ? ` · ${formatWhen(m.sent_at ?? m.created_at)}`
                         : ''}
                     </span>
+                    {m.status === 'failed' && m.last_error && (
+                      <span className="item-sub">{m.last_error}</span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -130,7 +154,12 @@ export default function Activity() {
 
           <section className="screen-section">
             <h2>Replies</h2>
-            {replies.length === 0 ? (
+            {fromOwnPhone ? (
+              <p className="empty">
+                Replies come straight to your phone, since texts are sent from your own
+                number.
+              </p>
+            ) : replies.length === 0 ? (
               <p className="empty">No replies yet. They’ll appear here when customers text back.</p>
             ) : (
               <ul className="list">
@@ -138,7 +167,7 @@ export default function Activity() {
                   <li key={r.id}>
                     <span className="item-title">{r.body}</span>
                     <span className="item-sub">
-                      {r.from_mobile}
+                      {customerName(r.customers, r.from_mobile)} · {r.from_mobile}
                       {formatWhen(r.received_at) ? ` · ${formatWhen(r.received_at)}` : ''}
                     </span>
                   </li>

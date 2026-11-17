@@ -5,11 +5,15 @@ import {
   isMockSend,
   basicAuth,
   sendFailureReason,
+  ownerFailureReason,
   adminFailureReason,
   verifyHmacSignature,
+  verifyMobileMessageSignature,
+  constantTimeEqual,
   verifyAdminJwt,
   verifyUserJwt,
   parseWebhookEvent,
+  parseMobileMessageInbound,
   normaliseAuMobile,
   withCors,
   allowedOrigin,
@@ -31,6 +35,11 @@ export interface Env {
   SENDER_LIVE?: string; // "true" to actually send (generic live switch)
   MOBILE_MESSAGE_USERNAME?: string;
   MOBILE_MESSAGE_PASSWORD?: string;
+  // Inbound replies: the account signing secret (preferred) and/or the secret
+  // embedded in the webhook URL. At least one must be set or inbound webhooks
+  // are refused with 503.
+  MOBILE_MESSAGE_WEBHOOK_SECRET?: string;
+  MOBILE_MESSAGE_INBOUND_KEY?: string;
   GOOGLE_PLACES_API_KEY?: string;
 }
 
@@ -159,7 +168,12 @@ class MobileMessageClient {
     private username: string,
     private password: string,
   ) {}
-  async send(to: string, text: string, sender: string): Promise<void> {
+  async send(
+    to: string,
+    text: string,
+    sender: string,
+    customRef?: string,
+  ): Promise<void> {
     const res = await fetch("https://api.mobilemessage.com.au/v1/messages", {
       method: "POST",
       headers: {
@@ -167,7 +181,18 @@ class MobileMessageClient {
         Authorization: basicAuth(this.username, this.password),
         "Idempotency-Key": crypto.randomUUID(),
       },
-      body: JSON.stringify({ messages: [{ to, message: text, sender }] }),
+      body: JSON.stringify({
+        messages: [
+          {
+            to,
+            message: text,
+            sender,
+            // The reply webhook returns this as original_custom_ref, which
+            // is how a reply is matched to its message, business and customer.
+            ...(customRef ? { custom_ref: customRef } : {}),
+          },
+        ],
+      }),
     });
     if (!res.ok) {
       const body = await res.text();
@@ -183,6 +208,7 @@ async function sendSms(
   text: string,
   businessId: string,
   sender?: string,
+  messageId?: string,
 ): Promise<void> {
   if (mode === "log_only") {
     console.log(`[log-only] would send to=${to} text=${JSON.stringify(text)}`);
@@ -211,7 +237,7 @@ async function sendSms(
       env.MOBILE_MESSAGE_USERNAME ?? "",
       env.MOBILE_MESSAGE_PASSWORD ?? "",
     );
-    await client.send(to, text, sender || "MurSystems");
+    await client.send(to, text, sender || "MurSystems", messageId);
     return;
   }
   throw new Error(`${mode} live sending is not implemented yet`);
@@ -245,7 +271,7 @@ async function runSender(env: Env): Promise<void> {
       if (!prep) {
         await supabaseRpc(env, "mark_failed", {
           p_message_id: msg.id,
-          p_error: "no recipient",
+          p_error: "There is no phone number for this customer.",
           p_retryable: false,
         });
         continue;
@@ -257,7 +283,7 @@ async function runSender(env: Env): Promise<void> {
         );
         await supabaseRpc(env, "mark_failed", {
           p_message_id: msg.id,
-          p_error: "not allowlisted",
+          p_error: "Testing is on, so this text only goes to the test number.",
           p_retryable: false,
         });
         continue;
@@ -270,6 +296,7 @@ async function runSender(env: Env): Promise<void> {
         prep.rendered_text,
         prep.business_id,
         prep.sender_number,
+        msg.id,
       );
       await supabaseRpc(env, "mark_sent", {
         p_message_id: msg.id,
@@ -277,9 +304,10 @@ async function runSender(env: Env): Promise<void> {
         p_mock: isMockSend(prep.send_mode, env.SENDER_LIVE),
       });
     } catch (e) {
+      console.log(`[send] ${msg.id} failed: ${String(e)}`);
       await supabaseRpc(env, "mark_failed", {
         p_message_id: msg.id,
-        p_error: String(e),
+        p_error: ownerFailureReason(e),
         p_retryable: true,
       });
     }
@@ -331,6 +359,85 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
   }
 
   return new Response("ignored");
+}
+
+// ---------- Mobile Message inbound replies ----------
+
+// The webhook is authenticated either by Mobile Message's signing secret or,
+// until that is generated in their dashboard, by a secret in the configured
+// webhook URL. Returns null when neither is configured (fail closed).
+async function mobileMessageAuthorised(
+  request: Request,
+  env: Env,
+  rawBody: string,
+): Promise<boolean | null> {
+  const signingSecret = env.MOBILE_MESSAGE_WEBHOOK_SECRET?.trim();
+  if (signingSecret) {
+    return verifyMobileMessageSignature(
+      rawBody,
+      request.headers.get("x-mm-timestamp") ?? "",
+      request.headers.get("x-mm-signature") ?? "",
+      signingSecret,
+    );
+  }
+  const urlKey = env.MOBILE_MESSAGE_INBOUND_KEY?.trim();
+  if (!urlKey) return null;
+  const supplied = new URL(request.url).searchParams.get("key") ?? "";
+  return constantTimeEqual(supplied, urlKey);
+}
+
+// POST /webhook/mobile-message — a reply or unsubscribe from a customer.
+// The database matches the reply to its message/business/customer, stores it,
+// and records STOP-like replies as opt-outs. Provider retries replay the same
+// received_at, which the replies table dedupes.
+async function handleMobileMessageWebhook(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
+  }
+
+  const rawBody = await request.text();
+  const authorised = await mobileMessageAuthorised(request, env, rawBody);
+  if (authorised === null) {
+    console.log("[mm-webhook] no signing secret or URL key configured");
+    return new Response("Webhook not configured", { status: 503 });
+  }
+  if (!authorised) return new Response("Unauthorized", { status: 401 });
+
+  let event: Record<string, unknown>;
+  try {
+    event = JSON.parse(rawBody) as Record<string, unknown>;
+  } catch {
+    return new Response("Bad request", { status: 400 });
+  }
+
+  const inbound = parseMobileMessageInbound(event);
+  if (!inbound.sender || !inbound.message) return new Response("ok");
+
+  try {
+    const rows = await supabaseRpc(env, "handle_sms_reply", {
+      p_to_number: inbound.to || null,
+      p_from_mobile: inbound.sender,
+      p_body: inbound.message,
+      p_is_unsubscribe: inbound.type === "unsubscribe",
+      p_custom_ref: inbound.originalCustomRef || null,
+      p_received_at: inbound.receivedAt || null,
+    });
+    const result = Array.isArray(rows) ? rows[0] : rows;
+    if (!result?.matched) {
+      console.log(
+        `[mm-webhook] no business matched reply from ${inbound.sender} to ${inbound.to || "unknown"}`,
+      );
+    }
+    return new Response("ok");
+  } catch (e) {
+    // A 5xx makes Mobile Message retry, so a database hiccup does not lose
+    // the reply.
+    console.log(`[mm-webhook] failed: ${String(e)}`);
+    return new Response("Server error", { status: 500 });
+  }
 }
 
 // ---------- existing link routes ----------
@@ -594,7 +701,7 @@ async function handleAdmin(
       if (!prep || !isAllowlisted(prep.mobile, allowlist)) {
         await supabaseRpc(env, "mark_failed", {
           p_message_id: created.message_id,
-          p_error: "test recipient not allowlisted",
+          p_error: "This number is not on the test allowlist, so the text was not sent.",
           p_retryable: false,
         });
         return Response.json(
@@ -614,6 +721,7 @@ async function handleAdmin(
           prep.rendered_text,
           prep.business_id,
           prep.sender_number,
+          created.message_id,
         );
         await supabaseRpc(env, "mark_sent", {
           p_message_id: created.message_id,
@@ -632,7 +740,7 @@ async function handleAdmin(
         console.log(`[admin-test] send failed for ${id}: ${String(e)}`);
         await supabaseRpc(env, "mark_failed", {
           p_message_id: created.message_id,
-          p_error: String(e),
+          p_error: ownerFailureReason(e),
           p_retryable: true,
         });
         return Response.json(
@@ -685,7 +793,7 @@ async function handleAdmin(
         ),
         supabaseGet(
           env,
-          `replies?business_id=eq.${id}&select=id,from_mobile,body,received_at&order=received_at.desc&limit=50`,
+          `replies?business_id=eq.${id}&select=id,from_mobile,body,received_at,customer_id,customers(first_name)&order=received_at.desc&limit=50`,
         ),
       ]);
       return Response.json({ messages, replies });
@@ -885,6 +993,10 @@ export default {
     const path = url.pathname;
 
     if (path === "/webhook") return handleWebhook(request, env);
+
+    if (path === "/webhook/mobile-message") {
+      return handleMobileMessageWebhook(request, env);
+    }
 
     if (path === "/status") {
       return withCors(

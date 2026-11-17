@@ -13,7 +13,12 @@ import {
   generateAuthLink,
   basicAuth,
   sendFailureReason,
+  ownerFailureReason,
   adminFailureReason,
+  verifyMobileMessageSignature,
+  constantTimeEqual,
+  parseMobileMessageInbound,
+  isoUtc,
 } from "./guard";
 
 describe("basicAuth", () => {
@@ -42,6 +47,23 @@ describe("sendFailureReason", () => {
   it("explains an unreachable provider", () => {
     expect(sendFailureReason("TypeError: fetch failed")).toContain(
       "could not be reached",
+    );
+  });
+});
+
+describe("ownerFailureReason", () => {
+  it("keeps secret names out of the owner-facing reason", () => {
+    const reason = ownerFailureReason(
+      "Mobile Message send failed (401): Unauthorized",
+    );
+    expect(reason).toBe(
+      "Mobile Message rejected the login. Check the provider settings.",
+    );
+    expect(reason).not.toMatch(/secret/i);
+  });
+  it("gives a plain reason for an unknown failure", () => {
+    expect(ownerFailureReason(new Error("weird"))).toBe(
+      "The text could not be sent.",
     );
   });
 });
@@ -170,6 +192,92 @@ describe("parseWebhookEvent", () => {
       fromMobile: "",
       body: "",
     });
+  });
+});
+
+describe("Mobile Message webhook", () => {
+  const secret = "mm-secret";
+
+  async function sign(body: string, timestamp: string): Promise<string> {
+    const key = await crypto.subtle.importKey(
+      "raw",
+      new TextEncoder().encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const sig = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      new TextEncoder().encode(`${timestamp}.${body}`),
+    );
+    return Array.from(new Uint8Array(sig))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  it("accepts a valid signature and constant-time comparison", async () => {
+    const body = '{"type":"inbound"}';
+    const ts = "1800000000";
+    const sig = await sign(body, ts);
+    expect(
+      await verifyMobileMessageSignature(body, ts, sig, secret, 1800000000_000),
+    ).toBe(true);
+    expect(constantTimeEqual(sig, sig.toUpperCase())).toBe(false);
+  });
+
+  it("rejects a tampered body, a stale timestamp and missing headers", async () => {
+    const body = '{"type":"inbound"}';
+    const ts = "1800000000";
+    const sig = await sign(body, ts);
+    expect(
+      await verifyMobileMessageSignature(
+        '{"type":"unsubscribe"}',
+        ts,
+        sig,
+        secret,
+        1800000000_000,
+      ),
+    ).toBe(false);
+    expect(
+      await verifyMobileMessageSignature(
+        body,
+        ts,
+        sig,
+        secret,
+        (1800000000 + 301) * 1000,
+      ),
+    ).toBe(false);
+    expect(await verifyMobileMessageSignature(body, "", "", secret)).toBe(false);
+  });
+
+  it("parses the flat inbound payload", () => {
+    expect(
+      parseMobileMessageInbound({
+        to: "61485900133",
+        sender: "61411875278",
+        message: "Yes",
+        received_at: "2026-11-17 09:41:25",
+        type: "unsubscribe",
+        original_message_id: "abc",
+        original_custom_ref: "ref-1",
+      }),
+    ).toEqual({
+      type: "unsubscribe",
+      to: "61485900133",
+      sender: "61411875278",
+      message: "Yes",
+      receivedAt: "2026-11-17T09:41:25.000Z",
+      originalMessageId: "abc",
+      originalCustomRef: "ref-1",
+    });
+  });
+
+  it("normalises UTC timestamps and leaves junk empty", () => {
+    expect(isoUtc("2026-11-17 09:41:25")).toBe("2026-11-17T09:41:25.000Z");
+    expect(isoUtc("2026-11-17T09:41:25Z")).toBe("2026-11-17T09:41:25.000Z");
+    expect(isoUtc("not a date")).toBe("");
+    expect(isoUtc("")).toBe("");
   });
 });
 

@@ -132,7 +132,7 @@ select public.expire_stale_queued_messages();
 
 select is(
   (select status from public.messages where id = '00000000-0000-0000-0000-00000000a121'),
-  'failed',
+  'cancelled',
   'a queued text more than 7 days old is cancelled'
 );
 select is(
@@ -142,7 +142,7 @@ select is(
 );
 select is(
   (select last_error from public.messages where id = '00000000-0000-0000-0000-00000000a121'),
-  'expired while waiting to send',
+  'Cancelled after waiting more than 7 days to send.',
   'the cancellation reason is recorded'
 );
 select is(

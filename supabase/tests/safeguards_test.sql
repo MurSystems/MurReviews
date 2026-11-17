@@ -42,7 +42,7 @@ select ok((select cancelled from public.cancel_dev_messages()) >= 3, 'cancel ret
 select is(
   (select count(*) from public.messages
     where id in ('00000000-0000-0000-0000-0000000000d1','00000000-0000-0000-0000-0000000000d3','00000000-0000-0000-0000-0000000000d4')
-      and status = 'failed' and retryable = false),
+      and status = 'cancelled' and retryable = false),
   3::bigint,
   'queued and sending messages are cancelled and never auto-resent'
 );

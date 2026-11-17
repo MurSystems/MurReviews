@@ -54,6 +54,37 @@ export function sendFailureReason(error: unknown): string {
   return "The test text could not be sent. The Worker logs have the exact error.";
 }
 
+// The reason stored on a failed message is shown to the owner in Activity, so
+// it must stay free of secret names and stack traces. Admins still get the
+// more specific sendFailureReason() in the test-send response and the logs.
+export function ownerFailureReason(error: unknown): string {
+  const msg = String(error);
+  const provider = msg.match(
+    /(Mobile Message|SMSGate) send failed \((\d{3})\)(?::\s*([\s\S]*))?/,
+  );
+  if (provider) {
+    const [, name, status, detail = ""] = provider;
+    if (status === "401" || status === "403") {
+      return `${name} rejected the login. Check the provider settings.`;
+    }
+    if (status === "429") {
+      return `${name} is limiting how many texts can be sent. Try again shortly.`;
+    }
+    const trimmed = detail.trim().slice(0, 120);
+    return `${name} rejected the text${trimmed ? ` (${trimmed})` : ` (${status})`}.`;
+  }
+  if (/no connected phone/.test(msg)) {
+    return "This business has no phone connected for sending.";
+  }
+  if (/not implemented/.test(msg)) {
+    return "This business's send mode cannot send texts yet.";
+  }
+  if (/fetch failed|network|connection.*lost|timed out|ENOTFOUND|ECONNRESET/i.test(msg)) {
+    return "The text provider could not be reached.";
+  }
+  return "The text could not be sent.";
+}
+
 // Turn an unexpected admin-route error into a plain reason instead of leaving
 // the browser to show a generic "having trouble" message.
 export function adminFailureReason(error: unknown): string {
@@ -85,15 +116,7 @@ export function isMockSend(mode: string, senderLive: string | undefined): boolea
   return mode === "log_only" || senderLive !== "true";
 }
 
-// Verify an SMSGate webhook HMAC-SHA256 signature. The signature is computed
-// over `rawBody + timestamp` (unix seconds) and sent hex-encoded, with a
-// constant-time comparison so nobody can fake replies or opt-outs.
-export async function verifyHmacSignature(
-  rawBody: string,
-  timestamp: string,
-  signature: string,
-  secret: string,
-): Promise<boolean> {
+async function hmacSha256Hex(message: string, secret: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -104,17 +127,52 @@ export async function verifyHmacSignature(
   const sig = await crypto.subtle.sign(
     "HMAC",
     key,
-    new TextEncoder().encode(rawBody + timestamp),
+    new TextEncoder().encode(message),
   );
-  const hex = Array.from(new Uint8Array(sig))
+  return Array.from(new Uint8Array(sig))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-  if (hex.length !== signature.length) return false;
+}
+
+// Compare two strings without leaking where they differ (or their length).
+export function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
   let diff = 0;
-  for (let i = 0; i < hex.length; i++) {
-    diff |= hex.charCodeAt(i) ^ signature.charCodeAt(i);
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   }
   return diff === 0;
+}
+
+// Verify an SMSGate webhook HMAC-SHA256 signature. The signature is computed
+// over `rawBody + timestamp` (unix seconds) and sent hex-encoded, with a
+// constant-time comparison so nobody can fake replies or opt-outs.
+export async function verifyHmacSignature(
+  rawBody: string,
+  timestamp: string,
+  signature: string,
+  secret: string,
+): Promise<boolean> {
+  const hex = await hmacSha256Hex(rawBody + timestamp, secret);
+  return constantTimeEqual(hex, signature.toLowerCase());
+}
+
+// Verify a Mobile Message webhook signature. Their docs: HMAC-SHA256 of the
+// signing string `{X-MM-Timestamp}.{raw body}` keyed with the signing secret,
+// lowercase hex in X-MM-Signature. A timestamp more than five minutes away
+// means a replay, so reject it.
+export async function verifyMobileMessageSignature(
+  rawBody: string,
+  timestamp: string,
+  signature: string,
+  secret: string,
+  nowMs: number = Date.now(),
+): Promise<boolean> {
+  const seconds = Number(timestamp);
+  if (!timestamp || !Number.isFinite(seconds)) return false;
+  if (Math.abs(nowMs / 1000 - seconds) > 300) return false;
+  const hex = await hmacSha256Hex(`${timestamp}.${rawBody}`, secret);
+  return constantTimeEqual(hex, signature.toLowerCase());
 }
 
 // Verify a caller's Supabase JWT. Returns the user id, or null if invalid.
@@ -179,6 +237,47 @@ export function parseWebhookEvent(
     fromMobile: pick(payload.sender, event?.sender, payload.phoneNumber),
     body: pick(payload.message, event?.text, event?.body),
   };
+}
+
+// Mobile Message posts inbound replies and unsubscribes as a flat JSON body:
+// { to, sender, message, received_at, type, original_message_id,
+//   original_custom_ref }. custom_ref is what we set when sending, so it is
+// the exact link back to the message, business and customer.
+export interface MobileMessageInbound {
+  type: string;
+  to: string;
+  sender: string;
+  message: string;
+  receivedAt: string;
+  originalMessageId: string;
+  originalCustomRef: string;
+}
+
+export function parseMobileMessageInbound(
+  event: Record<string, unknown> | null | undefined,
+): MobileMessageInbound {
+  const str = (value: unknown): string =>
+    typeof value === "string" ? value.trim() : "";
+  return {
+    type: str(event?.type).toLowerCase(),
+    to: str(event?.to),
+    sender: str(event?.sender),
+    message: str(event?.message),
+    receivedAt: isoUtc(str(event?.received_at)),
+    originalMessageId: str(event?.original_message_id),
+    originalCustomRef: str(event?.original_custom_ref),
+  };
+}
+
+// Mobile Message timestamps are UTC but have no zone suffix. Normalise them so
+// the database stores the real instant and retries dedupe on the same value.
+export function isoUtc(value: string): string {
+  const text = value.trim();
+  if (!text) return "";
+  const withT = text.includes("T") ? text : text.replace(" ", "T");
+  const zoned = /([zZ]|[+-]\d{2}:?\d{2})$/.test(withT) ? withT : `${withT}Z`;
+  const date = new Date(zoned);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
 }
 
 // Same rule as public.normalise_au_mobile in the database.

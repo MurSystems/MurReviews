@@ -208,6 +208,33 @@ button:disabled {
   width: 100%;
 }
 
+/* Small sun/moon theme switch (login corner and app header). */
+.theme-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 34px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.theme-icon {
+  display: inline-flex;
+  opacity: 0.4;
+}
+
+.theme-icon.active {
+  opacity: 1;
+  color: var(--text);
+}
+
 /* ---------- Layout ---------- */
 
 .center {
@@ -318,12 +345,19 @@ button:disabled {
 /* ---------- Auth (login) ---------- */
 
 .auth {
+  position: relative;
   min-height: 100%;
   display: grid;
   place-items: center;
   padding: 28px 16px;
   background: var(--bg);
   color: var(--text);
+}
+
+.auth-top {
+  position: absolute;
+  top: 14px;
+  right: 14px;
 }
 
 .auth-card {

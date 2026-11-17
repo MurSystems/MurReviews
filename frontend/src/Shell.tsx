@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from './supabase';
 import { config } from './config';
 import { LogoMark } from './components/Logo';
+import ThemeToggle from './components/ThemeToggle';
 import AddCustomer from './screens/AddCustomer';
 import Activity from './screens/Activity';
 import Dashboard from './screens/Dashboard';
@@ -90,6 +91,7 @@ export default function Shell() {
               <span className="badge">{initials(business.name)}</span>
             ))}
         </div>
+        <ThemeToggle />
         <button className="btn-ghost" onClick={() => supabase.auth.signOut()}>
           Log out
         </button>

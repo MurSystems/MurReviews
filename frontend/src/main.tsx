@@ -3,10 +3,10 @@ import { createRoot } from 'react-dom/client';
 import './index.css';
 import App from './App';
 import { config } from './config';
-import { applyTheme, getTheme } from './theme';
+import { initTheme } from './theme';
 
-// Apply the saved light/dark choice before the first paint.
-applyTheme(getTheme());
+// Apply the saved choice, or follow the device until the user picks one.
+initTheme();
 
 // Inject the brand colours from the single config file as CSS variables.
 const t = config.theme;

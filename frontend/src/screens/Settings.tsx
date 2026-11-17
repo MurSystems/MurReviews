@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { supabase } from '../supabase';
 import { friendlyError } from '../errors';
-import { getTheme, saveTheme } from '../theme';
-import type { Theme } from '../theme';
+import { saveTheme } from '../theme';
+import { useTheme } from '../useTheme';
 
 function parseCsv(text: string): string[][] {
   return text
@@ -47,7 +47,7 @@ export default function Settings() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [interest, setInterest] = useState<'loading' | 'no' | 'yes'>('loading');
-  const [theme, setThemeChoice] = useState<Theme>(getTheme);
+  const theme = useTheme();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [pwBusy, setPwBusy] = useState(false);
@@ -172,11 +172,6 @@ export default function Settings() {
     setInterest('yes');
   }
 
-  function onTheme(next: Theme) {
-    saveTheme(next);
-    setThemeChoice(next);
-  }
-
   async function onChangePassword(e: FormEvent) {
     e.preventDefault();
     setNotice(null);
@@ -257,14 +252,14 @@ export default function Settings() {
       <section className="card screen-section">
         <h2>Appearance</h2>
         <p className="muted" style={{ margin: 0 }}>
-          Saved on this device. Light is the default.
+          Saved on this device. Until you choose, it follows your device.
         </p>
         <div className="row" role="group" aria-label="Theme">
           <button
             type="button"
             className={theme === 'light' ? 'btn btn-primary' : 'btn btn-secondary'}
             aria-pressed={theme === 'light'}
-            onClick={() => onTheme('light')}
+            onClick={() => saveTheme('light')}
           >
             Light
           </button>
@@ -272,7 +267,7 @@ export default function Settings() {
             type="button"
             className={theme === 'dark' ? 'btn btn-primary' : 'btn btn-secondary'}
             aria-pressed={theme === 'dark'}
-            onClick={() => onTheme('dark')}
+            onClick={() => saveTheme('dark')}
           >
             Dark
           </button>

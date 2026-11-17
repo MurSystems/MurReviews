@@ -4,6 +4,7 @@ import { supabase } from '../supabase';
 import { config, isAdminEmail } from '../config';
 import { friendlyError } from '../errors';
 import Logo from '../components/Logo';
+import ThemeToggle from '../components/ThemeToggle';
 
 function validEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -59,6 +60,9 @@ export default function Login() {
 
   return (
     <div className="auth">
+      <div className="auth-top">
+        <ThemeToggle />
+      </div>
       <div className="auth-card">
         <Logo size={88} compact />
         <h1 className="auth-title">{config.product}</h1>

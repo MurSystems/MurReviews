@@ -1,9 +1,9 @@
 -- ============================================================================
--- Logo: bucket settings and the owner's ability to save logo_url.
+-- Logo: bucket settings, owner writes, and the logo_url tenant restriction.
 -- ============================================================================
 
 create extension if not exists pgtap with schema extensions;
-select plan(6);
+select plan(9);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000c1', 'logo-owner@test.local'),
@@ -32,25 +32,52 @@ select is(
 set local role authenticated;
 
 set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c1';
+
 select lives_ok(
-  $$ update public.businesses set logo_url = 'https://m.example/logos/x.png?v=1'
+  $$ update public.businesses
+        set logo_url = 'https://pxnrcwnqoooemashbjgt.supabase.co/storage/v1/object/public/logos/00000000-0000-0000-0000-0000000000c3/logo?v=1'
       where id = '00000000-0000-0000-0000-0000000000c3' $$,
-  'owner can save logo_url'
+  'owner can save a logo in their own logos folder'
 );
 select is(
   (select logo_url from public.businesses where id = '00000000-0000-0000-0000-0000000000c3'),
-  'https://m.example/logos/x.png?v=1',
+  'https://pxnrcwnqoooemashbjgt.supabase.co/storage/v1/object/public/logos/00000000-0000-0000-0000-0000000000c3/logo?v=1',
   'logo_url is stored'
+);
+
+select throws_ok(
+  $$ update public.businesses
+        set logo_url = 'https://pxnrcwnqoooemashbjgt.supabase.co/storage/v1/object/public/logos/00000000-0000-0000-0000-0000000000c4/logo'
+      where id = '00000000-0000-0000-0000-0000000000c3' $$,
+  23514,
+  'logo_url must point to this business''s own file in the logos bucket',
+  'a business cannot point its logo at another business''s file'
+);
+
+select throws_ok(
+  $$ update public.businesses
+        set logo_url = 'https://example.com/logo.png'
+      where id = '00000000-0000-0000-0000-0000000000c3' $$,
+  23514,
+  'logo_url must point to this business''s own file in the logos bucket',
+  'a logo must live in the logos bucket'
+);
+
+select is(
+  (select logo_url from public.businesses where id = '00000000-0000-0000-0000-0000000000c3'),
+  'https://pxnrcwnqoooemashbjgt.supabase.co/storage/v1/object/public/logos/00000000-0000-0000-0000-0000000000c3/logo?v=1',
+  'rejected updates leave the existing logo untouched'
 );
 
 -- A different owner cannot touch this business.
 set local request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000c2';
-update public.businesses set logo_url = 'https://m.example/stolen.png'
+update public.businesses
+   set logo_url = 'https://pxnrcwnqoooemashbjgt.supabase.co/storage/v1/object/public/logos/00000000-0000-0000-0000-0000000000c3/logo?v=9'
  where id = '00000000-0000-0000-0000-0000000000c3';
 reset role;
 select is(
   (select logo_url from public.businesses where id = '00000000-0000-0000-0000-0000000000c3'),
-  'https://m.example/logos/x.png?v=1',
+  'https://pxnrcwnqoooemashbjgt.supabase.co/storage/v1/object/public/logos/00000000-0000-0000-0000-0000000000c3/logo?v=1',
   'another owner cannot change the logo'
 );
 

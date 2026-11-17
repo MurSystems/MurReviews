@@ -110,8 +110,10 @@ select is(
 );
 select is(
   (select reset_at from public.business_text_usage('00000000-0000-0000-0000-00000000a104')),
-  public.next_month_start_melbourne(),
-  'the reset date is the next Melbourne month start'
+  (select period_end from public.billing_period(
+     (select billing_anchor from public.businesses where id = '00000000-0000-0000-0000-00000000a104'),
+     now())),
+  'the reset date is the end of this business’s billing period'
 );
 
 -- 12-15. Queued texts wait at most 7 days.

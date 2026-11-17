@@ -88,6 +88,17 @@ function percent(rate: number | null | undefined): string {
   return `${Math.round((rate ?? 0) * 100)}%`;
 }
 
+function resetLabel(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-AU', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Australia/Melbourne',
+  });
+}
+
 type Business = {
   id: string;
   name: string;
@@ -102,6 +113,8 @@ type Business = {
   texts_used_this_month: number;
   monthly_text_cap: number;
   monthly_state: 'ok' | 'warning' | 'paused';
+  billing_anchor: string;
+  billing_period_end: string;
   texts_sent_this_month: number;
   clicks_this_month: number;
   click_rate_this_month: number;
@@ -283,6 +296,24 @@ export default function AdminScreen() {
         monthly_text_cap: cap,
       });
       setNotice({ kind: 'ok', text: `Monthly allowance set to ${cap} texts.` });
+      refresh();
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function onSetBillingAnchor(e: FormEvent) {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const fd = new FormData(form);
+    const id = String(fd.get('business_id') ?? '');
+    const anchor = String(fd.get('billing_anchor') ?? '');
+    setNotice(null);
+    try {
+      await adminFetch(`/admin/businesses/${id}/billing-anchor`, 'POST', {
+        billing_anchor: anchor,
+      });
+      setNotice({ kind: 'ok', text: `Billing date set to day ${Number(anchor.slice(8, 10))} each month.` });
       refresh();
     } catch (err) {
       showError(err);
@@ -700,6 +731,21 @@ export default function AdminScreen() {
                             />
                             <button className="ghost" type="submit">
                               Save
+                            </button>
+                          </form>
+                          <p className="hint" style={{ margin: '6px 0 0' }}>
+                            Resets {resetLabel(b.billing_period_end)}
+                          </p>
+                          <form onSubmit={onSetBillingAnchor} className="row">
+                            <input type="hidden" name="business_id" value={b.id} />
+                            <input
+                              name="billing_anchor"
+                              type="date"
+                              defaultValue={b.billing_anchor}
+                              aria-label={`Billing date for ${b.name}`}
+                            />
+                            <button className="ghost" type="submit">
+                              Save date
                             </button>
                           </form>
                         </td>

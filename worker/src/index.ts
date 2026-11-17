@@ -658,6 +658,27 @@ async function handleAdmin(
     }
     if (
       path.startsWith("/admin/businesses/") &&
+      path.endsWith("/billing-anchor") &&
+      method === "POST"
+    ) {
+      const id = path.split("/")[3];
+      const body = (await request.json()) as Record<string, any>;
+      const anchor = String(body.billing_anchor ?? "").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(anchor)) {
+        return Response.json(
+          { error: "Choose a billing date." },
+          { status: 400 },
+        );
+      }
+      await supabaseRpc(env, "admin_set_billing_anchor", {
+        p_business_id: id,
+        p_anchor: anchor,
+        p_admin_id: userId,
+      });
+      return Response.json({ ok: true });
+    }
+    if (
+      path.startsWith("/admin/businesses/") &&
       path.endsWith("/review-count") &&
       method === "POST"
     ) {

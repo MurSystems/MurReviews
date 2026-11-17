@@ -6,6 +6,7 @@ import ReviewTrend from '../components/ReviewTrend';
 
 type Stats = {
   month_start: string;
+  month_end: string;
   texts_sent_this_month: number;
   clicks_this_month: number;
   click_rate_this_month: number;
@@ -118,7 +119,8 @@ export default function Dashboard() {
           <section className="screen-section">
             <h2>This month</h2>
             <p className="muted" style={{ marginTop: 0 }}>
-              Since {formatDay(stats.month_start)}. Test texts never count.
+              {formatDay(stats.month_start)} – {formatDay(stats.month_end)} (your billing period).
+              Test texts never count.
             </p>
             <StatsRow stats={stats} period="month" />
           </section>

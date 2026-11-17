@@ -34,6 +34,7 @@ export default function AdminScreen() {
   const [viewAs, setViewAs] = useState<{ id: string; name: string } | null>(null);
   const [activity, setActivity] = useState<{ messages: any[]; replies: any[] } | null>(null);
   const [msg, setMsg] = useState('');
+  const [newPlaceId, setNewPlaceId] = useState('');
 
   useEffect(() => {
     refresh();
@@ -168,14 +169,18 @@ export default function AdminScreen() {
             <h2>Create business</h2>
             <input name="name" placeholder="Business name" required />
             <div>
-              <input name="place_id" placeholder="Google Place ID" required />
+              <input name="place_id" placeholder="Google Place ID" required value={newPlaceId} onChange={(e) => setNewPlaceId(e.target.value)} />
               <a href={PLACE_ID_FINDER} target="_blank" rel="noreferrer" style={{ fontSize: 14 }}>
                 Place ID finder ↗
               </a>
-              {' '}
-              <a href={reviewLink('PUT_PLACE_ID_HERE')} target="_blank" rel="noreferrer" style={{ fontSize: 14 }}>
-                (review link preview)
-              </a>
+              {newPlaceId && (
+                <>
+                  {' '}
+                  <a href={reviewLink(newPlaceId)} target="_blank" rel="noreferrer" style={{ fontSize: 14 }}>
+                    review link preview ↗
+                  </a>
+                </>
+              )}
             </div>
             <input name="timezone" placeholder="Timezone" defaultValue="Australia/Melbourne" />
             <select name="send_mode" defaultValue="log_only">

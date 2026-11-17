@@ -3,6 +3,9 @@ import {
   isAllowed,
   isAllowlisted,
   isMockSend,
+  basicAuth,
+  sendFailureReason,
+  adminFailureReason,
   verifyHmacSignature,
   verifyAdminJwt,
   verifyUserJwt,
@@ -105,7 +108,7 @@ class RealSmsGateClient implements SmsGateClient {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Basic ${btoa(`${this.username}:${this.password}`)}`,
+        Authorization: basicAuth(this.username, this.password),
       },
       body: JSON.stringify({
         textMessage: { text },
@@ -161,7 +164,7 @@ class MobileMessageClient {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Basic ${btoa(`${this.username}:${this.password}`)}`,
+        Authorization: basicAuth(this.username, this.password),
         "Idempotency-Key": crypto.randomUUID(),
       },
       body: JSON.stringify({ messages: [{ to, message: text, sender }] }),
@@ -633,7 +636,7 @@ async function handleAdmin(
           p_retryable: true,
         });
         return Response.json(
-          { error: "The test text could not be sent." },
+          { error: sendFailureReason(e) },
           { status: 502 },
         );
       }
@@ -689,7 +692,16 @@ async function handleAdmin(
     }
     return new Response("Not found", { status: 404 });
   } catch (e) {
-    return Response.json({ error: String(e) }, { status: 400 });
+    console.log(`[admin] ${method} ${path} failed: ${String(e)}`);
+    const badRequest = e instanceof SyntaxError;
+    return Response.json(
+      {
+        error: badRequest
+          ? "That request was not valid."
+          : adminFailureReason(e),
+      },
+      { status: badRequest ? 400 : 500 },
+    );
   }
 }
 

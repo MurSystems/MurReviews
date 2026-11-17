@@ -11,7 +11,53 @@ import {
   withCors,
   allowedOrigin,
   generateAuthLink,
+  basicAuth,
+  sendFailureReason,
+  adminFailureReason,
 } from "./guard";
+
+describe("basicAuth", () => {
+  it("encodes ASCII credentials", () => {
+    expect(basicAuth("user", "pass")).toBe("Basic dXNlcjpwYXNz");
+  });
+  it("encodes non-Latin1 credentials as UTF-8 instead of throwing", () => {
+    expect(() => basicAuth("user", "pässwörd✓")).not.toThrow();
+    expect(basicAuth("user", "pässwörd✓")).toBe(
+      `Basic ${Buffer.from("user:pässwörd✓", "utf8").toString("base64")}`,
+    );
+  });
+});
+
+describe("sendFailureReason", () => {
+  it("explains a rejected provider login", () => {
+    expect(
+      sendFailureReason("Mobile Message send failed (401): Unauthorized"),
+    ).toContain("rejected the login");
+  });
+  it("includes a provider's rejection detail", () => {
+    expect(
+      sendFailureReason("Mobile Message send failed (422): sender not verified"),
+    ).toBe("Mobile Message rejected the text: sender not verified");
+  });
+  it("explains an unreachable provider", () => {
+    expect(sendFailureReason("TypeError: fetch failed")).toContain(
+      "could not be reached",
+    );
+  });
+});
+
+describe("adminFailureReason", () => {
+  it("points at the database key when Supabase rejects it", () => {
+    expect(
+      adminFailureReason("Supabase RPC admin_list_businesses failed: 401"),
+    ).toContain("SUPABASE_SERVICE_ROLE_KEY");
+  });
+  it("points at migrations when a function is missing", () => {
+    expect(
+      adminFailureReason("Supabase RPC admin_list_businesses failed: 404"),
+    ).toContain("migrations");
+  });
+});
 
 describe("isAllowed", () => {
   it("allows log_only always", () => {

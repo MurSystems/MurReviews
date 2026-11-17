@@ -15,6 +15,69 @@ export function isAllowlisted(mobile: string, allowlist: string[]): boolean {
   return allowlist.includes(mobile);
 }
 
+// HTTP Basic credentials are UTF-8 bytes base64-encoded (RFC 7617). btoa only
+// accepts Latin1, so encode the string first or a credential with any other
+// character throws InvalidCharacterError before the request is made.
+export function basicAuth(user: string, password: string): string {
+  const bytes = new TextEncoder().encode(`${user}:${password}`);
+  let latin1 = "";
+  for (const byte of bytes) latin1 += String.fromCharCode(byte);
+  return `Basic ${btoa(latin1)}`;
+}
+
+// Turn a sender error into a short, plain-language reason an admin can act on.
+export function sendFailureReason(error: unknown): string {
+  const msg = String(error);
+  const provider = msg.match(
+    /(Mobile Message|SMSGate) send failed \((\d{3})\)(?::\s*([\s\S]*))?/,
+  );
+  if (provider) {
+    const [, name, status, detail = ""] = provider;
+    if (status === "401" || status === "403") {
+      return `${name} rejected the login. Check the ${name} username and password secrets.`;
+    }
+    if (status === "429") {
+      return `${name} is limiting how fast this account can send. Try again shortly.`;
+    }
+    const trimmed = detail.trim().slice(0, 200);
+    return `${name} rejected the text${trimmed ? `: ${trimmed}` : ` (${status}).`}`;
+  }
+  if (/no connected phone/.test(msg)) {
+    return "That business has no phone connected for sending.";
+  }
+  if (/not implemented/.test(msg)) {
+    return "That business's send mode cannot send texts yet.";
+  }
+  if (/fetch failed|network|connection.*lost|timed out|ENOTFOUND|ECONNRESET/i.test(msg)) {
+    return "The text provider could not be reached. Check the connection and try again.";
+  }
+  return "The test text could not be sent. The Worker logs have the exact error.";
+}
+
+// Turn an unexpected admin-route error into a plain reason instead of leaving
+// the browser to show a generic "having trouble" message.
+export function adminFailureReason(error: unknown): string {
+  const msg = String(error);
+  const db = msg.match(/Supabase (?:RPC|GET) \S* failed: (\d{3})/);
+  if (db) {
+    const status = db[1];
+    if (status === "401" || status === "403") {
+      return "The admin server's database key was rejected. Check the SUPABASE_SERVICE_ROLE_KEY secret.";
+    }
+    if (status === "404") {
+      return "The admin database is missing a function. Run the latest database migrations.";
+    }
+    if (status === "429" || status.startsWith("5")) {
+      return "The database is busy. Try again in a moment.";
+    }
+    return "The database rejected the admin request.";
+  }
+  if (/fetch failed|network|connection.*lost|timed out|ENOTFOUND|ECONNRESET/i.test(msg)) {
+    return "The admin server could not reach the database. Try again.";
+  }
+  return "The admin server could not complete that request. The Worker logs have the exact error.";
+}
+
 // A send that never reaches a real handset: log_only always, and every mode
 // while the live switch is off. These must be recorded with messages.mock=true
 // so they never count as real sends in stats.

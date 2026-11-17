@@ -186,10 +186,27 @@ describe("POST /admin/businesses/:id/send-test-now", () => {
     );
 
     expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining("Mobile Message rejected the text"),
+    });
     expect(rpcCalls(calls, "mark_failed")[0].body).toMatchObject({
       p_message_id: "msg-1",
       p_retryable: true,
     });
     expect(rpcCalls(calls, "mark_sent")).toHaveLength(0);
+  });
+
+  it("sends with a non-Latin1 credential instead of failing to encode it", async () => {
+    stubFetch();
+    const res = await worker.fetch(
+      testRequest(),
+      stubEnv({
+        SENDER_LIVE: "true",
+        MOBILE_MESSAGE_USERNAME: "user",
+        MOBILE_MESSAGE_PASSWORD: "pässwörd✓",
+      }),
+    );
+
+    expect(res.status).toBe(200);
   });
 });

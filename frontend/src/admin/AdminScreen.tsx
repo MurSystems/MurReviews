@@ -22,9 +22,22 @@ async function adminFetch(path: string, method = 'GET', body?: unknown) {
     throw new Error('Could not reach the admin server. Check your connection and try again.');
   }
   if (!res.ok) {
-    if (res.status === 401 || res.status === 403) {
+    // The Worker sends a plain-language `error` for anything it can explain
+    // (allowlist, rate limit, provider rejection, database trouble). Prefer it
+    // over a generic fallback so the admin sees the real reason.
+    let reason: string | null = null;
+    try {
+      const data = await res.json();
+      if (data && typeof data.error === 'string' && data.error.trim()) {
+        reason = data.error.trim();
+      }
+    } catch {
+      // no JSON body
+    }
+    if (res.status === 401 || (res.status === 403 && !reason)) {
       throw new Error('Your session has ended. Log in again.');
     }
+    if (reason) throw new Error(reason);
     if (res.status === 404) throw new Error('That item no longer exists.');
     if (res.status >= 500) {
       throw new Error('The admin server is having trouble. Try again in a moment.');

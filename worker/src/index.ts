@@ -4,7 +4,8 @@ import {
   verifyHmacSignature,
   verifyAdminJwt,
   withCors,
-  CORS_HEADERS,
+  allowedOrigin,
+  corsHeaders,
 } from "./guard";
 
 export interface Env {
@@ -16,8 +17,11 @@ export interface Env {
   PRODUCTION?: string; // only exact "true" means production
   LINK_DOMAIN: string; // e.g. https://m.mursystems123.workers.dev
   SEND_THROTTLE_MS: string; // e.g. "3000"
+  CORS_ORIGINS: string; // comma-separated allowed browser origins
   SMSGATE_WEBHOOK_SECRET?: string; // HMAC key for inbound webhooks
-  SMSGATE_LIVE?: string; // "true" to make real SMSGate calls (not yet)
+  SENDER_LIVE?: string; // "true" to actually send (generic live switch)
+  MOBILE_MESSAGE_USERNAME?: string;
+  MOBILE_MESSAGE_PASSWORD?: string;
 }
 
 const BOT_UA =
@@ -103,27 +107,54 @@ class RealSmsGateClient implements SmsGateClient {
   }
 }
 
+class MobileMessageClient {
+  constructor(
+    private username: string,
+    private password: string,
+  ) {}
+  async send(to: string, text: string, sender: string): Promise<void> {
+    const res = await fetch("https://api.mobilemessage.com.au/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${btoa(`${this.username}:${this.password}`)}`,
+        "Idempotency-Key": crypto.randomUUID(),
+      },
+      body: JSON.stringify({ messages: [{ to, message: text, sender }] }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Mobile Message send failed (${res.status}): ${body}`);
+    }
+  }
+}
+
 async function sendSms(
   env: Env,
   mode: string,
   to: string,
   text: string,
+  sender?: string,
 ): Promise<void> {
   if (mode === "log_only") {
     console.log(`[log-only] would send to=${to} text=${JSON.stringify(text)}`);
     return;
   }
-  // demo / android_gateway / sms_provider all go through the gateway. Until
-  // SMSGATE_LIVE is set, use the mock (logs and succeeds).
-  const client: SmsGateClient =
-    env.SMSGATE_LIVE === "true"
-      ? new RealSmsGateClient(
-          "https://api.sms-gate.app",
-          env.SUPABASE_SERVICE_ROLE_KEY, // placeholder; real creds come later
-          "unused",
-        )
-      : new MockSmsGateClient();
-  await client.send(to, text);
+  if (env.SENDER_LIVE !== "true") {
+    console.log(
+      `[mock] mode=${mode} to=${to} sender=${sender ?? "default"} text=${JSON.stringify(text)}`,
+    );
+    return;
+  }
+  if (mode === "sms_provider") {
+    const client = new MobileMessageClient(
+      env.MOBILE_MESSAGE_USERNAME ?? "",
+      env.MOBILE_MESSAGE_PASSWORD ?? "",
+    );
+    await client.send(to, text, sender || "MurSystems");
+    return;
+  }
+  throw new Error(`${mode} live sending is not implemented yet`);
 }
 
 // ---------- cron sender ----------
@@ -165,7 +196,7 @@ async function runSender(env: Env): Promise<void> {
         continue;
       }
 
-      await sendSms(env, prep.send_mode, prep.mobile, prep.rendered_text);
+      await sendSms(env, prep.send_mode, prep.mobile, prep.rendered_text, prep.sender_number);
       await supabaseRpc(env, "mark_sent", {
         p_message_id: msg.id,
         p_text: prep.rendered_text,
@@ -336,7 +367,10 @@ async function supabaseGet(env: Env, path: string): Promise<any> {
   return await res.json();
 }
 
-async function generateLoginLink(env: Env, email: string): Promise<string> {
+async function generateLoginLink(
+  env: Env,
+  email: string,
+): Promise<{ userId: string; link: string }> {
   const res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/generate_link`, {
     method: "POST",
     headers: {
@@ -350,8 +384,8 @@ async function generateLoginLink(env: Env, email: string): Promise<string> {
     const body = await res.text();
     throw new Error(`generate_link failed (${res.status}): ${body}`);
   }
-  const data = (await res.json()) as { action_link?: string };
-  return data.action_link ?? "";
+  const data = (await res.json()) as { id?: string; action_link?: string };
+  return { userId: data.id ?? "", link: data.action_link ?? "" };
 }
 
 async function handleAdmin(
@@ -370,25 +404,27 @@ async function handleAdmin(
     }
     if (path === "/admin/businesses" && method === "POST") {
       const body = (await request.json()) as Record<string, any>;
-      const ownerId = await supabaseRpc(env, "admin_find_owner", {
+      let ownerId = await supabaseRpc(env, "admin_find_owner", {
         p_email: body.owner_email,
       });
+      let loginLink: string | null = null;
       if (!ownerId) {
-        return Response.json(
-          { error: "Owner email not found — generate a login link first." },
-          { status: 400 },
-        );
+        // Create the owner user in the same step (generate_link magiclink
+        // creates the user properly and returns the id + login link).
+        const g = await generateLoginLink(env, body.owner_email);
+        ownerId = g.userId;
+        loginLink = g.link;
       }
       const rows = await supabaseRpc(env, "admin_create_business", {
         p_name: body.name,
         p_place_id: body.place_id,
         p_timezone: body.timezone ?? "Australia/Melbourne",
-        p_send_mode: body.send_mode ?? "log_only",
+        p_send_mode: body.send_mode ?? "sms_provider",
         p_delay_minutes: body.delay_minutes ?? 60,
         p_owner_id: ownerId,
         p_admin_id: userId,
       });
-      return Response.json(rows?.[0] ?? null);
+      return Response.json({ ...(rows?.[0] ?? {}), login_link: loginLink });
     }
     if (
       path.startsWith("/admin/businesses/") &&
@@ -418,8 +454,8 @@ async function handleAdmin(
       const body = (await request.json()) as Record<string, any>;
       const email = String(body.email ?? "").trim();
       if (!email) return new Response("Bad request", { status: 400 });
-      const link = await generateLoginLink(env, email);
-      return Response.json({ link });
+      const g = await generateLoginLink(env, email);
+      return Response.json({ link: g.link });
     }
     if (path === "/admin/audit" && method === "GET") {
       const rows = await supabaseRpc(env, "admin_get_audit", {});
@@ -453,8 +489,9 @@ async function handleAdmin(
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const allowOrigin = allowedOrigin(request, env.CORS_ORIGINS ?? "");
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: CORS_HEADERS });
+      return new Response(null, { status: 204, headers: corsHeaders(allowOrigin) });
     }
 
     const url = new URL(request.url);
@@ -464,23 +501,25 @@ export default {
 
     if (path.startsWith("/admin/")) {
       const admin = await verifyAdmin(request, env);
-      if (!admin) return withCors(new Response("Unauthorized", { status: 401 }));
-      return withCors(await handleAdmin(request, env, admin.userId));
+      if (!admin) {
+        return withCors(new Response("Unauthorized", { status: 401 }), allowOrigin);
+      }
+      return withCors(await handleAdmin(request, env, admin.userId), allowOrigin);
     }
 
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
     const stub = env.RATE_LIMITER.get(env.RATE_LIMITER.idFromName(ip));
     if (!(await stub.check(100, 60_000))) {
-      return withCors(new Response("Too many requests", { status: 429 }));
+      return withCors(new Response("Too many requests", { status: 429 }), allowOrigin);
     }
 
     if (path.startsWith("/r/")) {
-      return withCors(await handleReview(request, env, path.slice(3)));
+      return withCors(await handleReview(request, env, path.slice(3)), allowOrigin);
     }
     if (path.startsWith("/o/")) {
-      return withCors(await handleOptOut(request, env, path.slice(3)));
+      return withCors(await handleOptOut(request, env, path.slice(3)), allowOrigin);
     }
-    return withCors(new Response("Not found", { status: 404 }));
+    return withCors(new Response("Not found", { status: 404 }), allowOrigin);
   },
 
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {

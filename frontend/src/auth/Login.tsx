@@ -13,7 +13,10 @@ export default function Login() {
     e.preventDefault();
     setError('');
     setBusy(true);
-    const { error } = await supabase.auth.signInWithOtp({ email: email.trim() });
+    const { error } = await supabase.auth.signInWithOtp({
+      email: email.trim(),
+      options: { emailRedirectTo: window.location.origin },
+    });
     setBusy(false);
     if (error) setError(error.message);
     else setSent(true);

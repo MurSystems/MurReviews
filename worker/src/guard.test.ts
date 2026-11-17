@@ -4,6 +4,7 @@ import {
   verifyHmacSignature,
   verifyAdminJwt,
   withCors,
+  allowedOrigin,
 } from "./guard";
 
 describe("isAllowed", () => {
@@ -115,12 +116,29 @@ describe("verifyAdminJwt", () => {
   });
 });
 
-describe("withCors", () => {
-  it("adds CORS headers so the browser app can call the Worker", () => {
-    const res = withCors(new Response("ok"));
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+describe("withCors / allowedOrigin", () => {
+  it("adds CORS headers with the allowed origin (not *)", () => {
+    const res = withCors(new Response("ok"), "http://localhost:5173");
+    expect(res.headers.get("access-control-allow-origin")).toBe(
+      "http://localhost:5173",
+    );
     expect(res.headers.get("access-control-allow-methods")).toContain("POST");
-    expect(res.headers.get("access-control-allow-methods")).toContain("OPTIONS");
-    expect(res.headers.get("access-control-allow-headers")).toContain("Authorization");
+    expect(res.headers.get("access-control-allow-headers")).toContain(
+      "Authorization",
+    );
+  });
+
+  it("allowedOrigin returns only an origin on the list", () => {
+    const ok = new Request("http://x", {
+      headers: { origin: "http://localhost:5173" },
+    });
+    expect(
+      allowedOrigin(ok, "http://localhost:5173,https://app.example.com"),
+    ).toBe("http://localhost:5173");
+
+    const bad = new Request("http://x", {
+      headers: { origin: "https://evil.example.com" },
+    });
+    expect(allowedOrigin(bad, "http://localhost:5173")).toBe("");
   });
 });

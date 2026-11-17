@@ -8,7 +8,8 @@
     "SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB4bnJjd25xb29vZW1hc2hiamd0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4MjI1NTEsImV4cCI6MjExMDM5ODU1MX0.9CZ3jvIZMa0eTS52jWCeilB33pKeZuDNP3N0u3KJC10",
     "SEND_ALLOWLIST": "+61411875278",
     "LINK_DOMAIN": "https://m.mursystems123.workers.dev",
-    "SEND_THROTTLE_MS": "3000"
+    "SEND_THROTTLE_MS": "3000",
+    "CORS_ORIGINS": "http://localhost:5173,https://mur-reviews.mursystems123.workers.dev"
   },
   "triggers": {
     "crons": ["* * * * *"]

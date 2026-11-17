@@ -64,7 +64,7 @@ select is(
   'admin_create_business creates a business'
 );
 select is(
-  (select count(*) from public.audit_log where action = 'create_business'),
+  (select count(*) from public.audit_log where action = 'create_business' and admin_id = '00000000-0000-0000-0000-0000000000c1'),
   1::bigint,
   'admin_create_business writes an audit row'
 );

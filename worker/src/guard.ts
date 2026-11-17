@@ -68,17 +68,31 @@ export async function verifyAdminJwt(
   return profs.length > 0 ? user.id : null;
 }
 
-// CORS for the browser-facing routes (the owner/admin app runs on localhost
-// during dev and on Cloudflare Pages later).
-export const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Authorization, Content-Type",
-  "Access-Control-Max-Age": "86400",
-};
+// CORS: allow only origins listed in CORS_ORIGINS (echo back the request's
+// Origin when it is allowed; otherwise no allow header, so the browser blocks).
+export function allowedOrigin(request: Request, corsOrigins: string): string {
+  const origin = request.headers.get("origin");
+  const allowed = corsOrigins
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return origin && allowed.includes(origin) ? origin : "";
+}
 
-export function withCors(res: Response): Response {
+export function corsHeaders(allowOrigin: string): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Max-Age": "86400",
+    Vary: "Origin",
+  };
+}
+
+export function withCors(res: Response, allowOrigin: string): Response {
   const headers = new Headers(res.headers);
-  for (const [k, v] of Object.entries(CORS_HEADERS)) headers.set(k, v);
+  for (const [k, v] of Object.entries(corsHeaders(allowOrigin))) {
+    headers.set(k, v);
+  }
   return new Response(res.body, { status: res.status, headers });
 }

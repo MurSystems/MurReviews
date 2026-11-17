@@ -65,7 +65,7 @@ export default function AdminScreen() {
     const f = e.currentTarget as any;
     setMsg('');
     try {
-      await adminFetch('/admin/businesses', 'POST', {
+      const r = await adminFetch('/admin/businesses', 'POST', {
         name: f.name.value,
         place_id: f.place_id.value,
         timezone: f.timezone.value || 'Australia/Melbourne',
@@ -74,9 +74,12 @@ export default function AdminScreen() {
         owner_email: f.owner_email.value,
       });
       f.reset();
-      setMsg('Business created.');
-      refresh();
-    } catch (err) {
+      setMsg(
+        r?.login_link
+          ? `Business created. Owner login link: ${r.login_link}`
+          : 'Business created.',
+      );
+      refresh();    } catch (err) {
       setMsg(errMsg(err));
     }
   }
@@ -194,11 +197,11 @@ export default function AdminScreen() {
               )}
             </div>
             <input name="timezone" placeholder="Timezone" defaultValue="Australia/Melbourne" />
-            <select name="send_mode" defaultValue="log_only">
-              <option value="log_only">log_only</option>
-              <option value="android_gateway">android_gateway</option>
+            <select name="send_mode" defaultValue="sms_provider">
               <option value="sms_provider">sms_provider</option>
+              <option value="android_gateway">android_gateway</option>
               <option value="demo">demo</option>
+              <option value="log_only">log_only</option>
             </select>
             <input name="delay" type="number" placeholder="Delay (minutes)" defaultValue={60} />
             <input name="owner_email" type="email" placeholder="Owner email" required />

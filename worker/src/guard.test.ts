@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { isAllowed, verifyHmacSignature } from "./guard";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { isAllowed, verifyHmacSignature, verifyAdminJwt } from "./guard";
 
 describe("isAllowed", () => {
   it("allows log_only always", () => {
@@ -64,5 +64,48 @@ describe("verifyHmacSignature", () => {
     expect(await verifyHmacSignature(body, "1700000001", sig, secret)).toBe(
       false,
     );
+  });
+});
+
+describe("verifyAdminJwt", () => {
+  const url = "https://x.supabase.co";
+  const anon = "anon-key";
+  const svc = "service-key";
+
+  afterEach(() => vi.restoreAllMocks());
+
+  function mockFetch(profileIsAdmin: boolean) {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const u = String(input);
+      if (u.endsWith("/auth/v1/user")) {
+        return new Response(JSON.stringify({ id: "user-1" }), { status: 200 });
+      }
+      if (u.includes("/rest/v1/profiles")) {
+        return new Response(
+          JSON.stringify(profileIsAdmin ? [{ id: "user-1" }] : []),
+          { status: 200 },
+        );
+      }
+      return new Response("", { status: 404 });
+    }) as typeof fetch;
+  }
+
+  it("accepts an admin JWT", async () => {
+    mockFetch(true);
+    expect(await verifyAdminJwt("jwt", url, anon, svc)).toBe("user-1");
+  });
+
+  it("rejects an owner (non-admin) JWT", async () => {
+    mockFetch(false);
+    expect(await verifyAdminJwt("jwt", url, anon, svc)).toBeNull();
+  });
+
+  it("rejects an invalid JWT", async () => {
+    globalThis.fetch = (async () => new Response("", { status: 401 })) as typeof fetch;
+    expect(await verifyAdminJwt("bad", url, anon, svc)).toBeNull();
+  });
+
+  it("rejects a missing JWT", async () => {
+    expect(await verifyAdminJwt("", url, anon, svc)).toBeNull();
   });
 });

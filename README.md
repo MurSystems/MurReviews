@@ -3,10 +3,9 @@
 Multi-tenant app that lets local businesses collect more Google reviews by
 texting customers a review link after a job. Operated by Mur Systems.
 
-**Status: Stage 5 complete** — SMSGate sender, cron, webhook, throttling and
-demo mode (mocked; no live sending). Stages 1–4 (schema + RLS, owner app,
-queue/reminders, review links) are also in. See
-[`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
+**Status: Stage 6 complete** — admin panel, demo send, trial caps, audit log.
+Stages 1–5 (schema + RLS, owner app, queue/reminders, review links, mocked
+sender) are also in. See [`docs/DATA_MODEL.md`](docs/DATA_MODEL.md).
 
 Review/opt-out links live at **https://m.mursystems123.workers.dev**
 (`LINK_DOMAIN` in `.env.example` — swap for a custom short domain later).
@@ -51,6 +50,11 @@ Then open the printed URL (usually **http://localhost:5173**).
 
 Log in with a magic link using `mursystems123@gmail.com` — the demo business
 is owned by that address, so you'll see the demo customers right away.
+
+**Admin panel:** log in as `mursystems123@gmail.com` (also the admin account)
+and an **Admin** tab appears — businesses (create, status, usage, "view as"),
+demo send, and the audit log. Admin actions go through the Worker, which
+verifies the caller's JWT + admin role server-side.
 
 ## Auth email (dev vs production)
 

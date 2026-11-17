@@ -40,3 +40,30 @@ export async function verifyHmacSignature(
   }
   return diff === 0;
 }
+
+// Verify a caller's Supabase JWT and that their profile has the admin role.
+// Returns the user id, or null if the JWT is invalid or the user is not admin.
+export async function verifyAdminJwt(
+  jwt: string,
+  url: string,
+  anonKey: string,
+  serviceKey: string,
+): Promise<string | null> {
+  if (!jwt) return null;
+
+  const userRes = await fetch(`${url}/auth/v1/user`, {
+    headers: { apikey: anonKey, Authorization: `Bearer ${jwt}` },
+  });
+  if (!userRes.ok) return null;
+  const user = (await userRes.json()) as { id: string };
+
+  const profRes = await fetch(
+    `${url}/rest/v1/profiles?id=eq.${user.id}&role=eq.admin&select=id`,
+    {
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+    },
+  );
+  if (!profRes.ok) return null;
+  const profs = (await profRes.json()) as unknown[];
+  return profs.length > 0 ? user.id : null;
+}

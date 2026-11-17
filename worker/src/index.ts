@@ -1,9 +1,10 @@
 import { DurableObject } from "cloudflare:workers";
-import { isAllowed, verifyHmacSignature } from "./guard";
+import { isAllowed, verifyHmacSignature, verifyAdminJwt } from "./guard";
 
 export interface Env {
   RATE_LIMITER: DurableObjectNamespace<RateLimiter>;
   SUPABASE_URL: string;
+  SUPABASE_ANON_KEY: string;
   SUPABASE_SERVICE_ROLE_KEY: string;
   SEND_ALLOWLIST: string; // comma-separated E.164 numbers
   PRODUCTION?: string; // only exact "true" means production
@@ -56,7 +57,8 @@ async function supabaseRpc(
   if (!res.ok) {
     throw new Error(`Supabase RPC ${fn} failed: ${res.status}`);
   }
-  return await res.json();
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 // ---------- senders (mock until a real gateway is paired) ----------
@@ -298,6 +300,149 @@ async function handleOptOut(
   });
 }
 
+// ---------- admin routes ----------
+
+async function verifyAdmin(
+  request: Request,
+  env: Env,
+): Promise<{ userId: string } | null> {
+  const jwt = (request.headers.get("authorization") ?? "").replace(
+    /^Bearer\s+/i,
+    "",
+  );
+  const userId = await verifyAdminJwt(
+    jwt,
+    env.SUPABASE_URL,
+    env.SUPABASE_ANON_KEY,
+    env.SUPABASE_SERVICE_ROLE_KEY,
+  );
+  return userId ? { userId } : null;
+}
+
+async function supabaseGet(env: Env, path: string): Promise<any> {
+  const res = await fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  });
+  if (!res.ok) throw new Error(`Supabase GET ${path} failed: ${res.status}`);
+  return await res.json();
+}
+
+async function generateLoginLink(env: Env, email: string): Promise<string> {
+  const headers = {
+    apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+    "Content-Type": "application/json",
+  };
+  let res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/generate_link`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ type: "magiclink", email }),
+  });
+  if (!res.ok) {
+    res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/generate_link`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ type: "signup", email }),
+    });
+  }
+  if (!res.ok) throw new Error(`generate_link failed: ${res.status}`);
+  const data = (await res.json()) as { action_link?: string };
+  return data.action_link ?? "";
+}
+
+async function handleAdmin(
+  request: Request,
+  env: Env,
+  userId: string,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const path = url.pathname;
+  const method = request.method;
+
+  try {
+    if (path === "/admin/businesses" && method === "GET") {
+      const rows = await supabaseRpc(env, "admin_list_businesses", {});
+      return Response.json(rows ?? []);
+    }
+    if (path === "/admin/businesses" && method === "POST") {
+      const body = (await request.json()) as Record<string, any>;
+      const ownerId = await supabaseRpc(env, "admin_ensure_owner", {
+        p_email: body.owner_email,
+      });
+      const rows = await supabaseRpc(env, "admin_create_business", {
+        p_name: body.name,
+        p_place_id: body.place_id,
+        p_timezone: body.timezone ?? "Australia/Melbourne",
+        p_send_mode: body.send_mode ?? "log_only",
+        p_delay_minutes: body.delay_minutes ?? 60,
+        p_owner_id: ownerId,
+        p_admin_id: userId,
+      });
+      return Response.json(rows?.[0] ?? null);
+    }
+    if (
+      path.startsWith("/admin/businesses/") &&
+      path.endsWith("/status") &&
+      method === "POST"
+    ) {
+      const id = path.split("/")[3];
+      const body = (await request.json()) as Record<string, any>;
+      await supabaseRpc(env, "admin_set_business_status", {
+        p_business_id: id,
+        p_status: body.status,
+        p_trial_cap: body.trial_cap ?? null,
+        p_admin_id: userId,
+      });
+      return Response.json({ ok: true });
+    }
+    if (path === "/admin/demo-send" && method === "POST") {
+      const body = (await request.json()) as Record<string, any>;
+      const rows = await supabaseRpc(env, "admin_demo_send", {
+        p_place_id: body.place_id,
+        p_mobile: body.mobile,
+        p_admin_id: userId,
+      });
+      return Response.json(rows?.[0] ?? null);
+    }
+    if (path === "/admin/generate-login-link" && method === "POST") {
+      const body = (await request.json()) as Record<string, any>;
+      const email = String(body.email ?? "").trim();
+      if (!email) return new Response("Bad request", { status: 400 });
+      await supabaseRpc(env, "admin_ensure_owner", { p_email: email });
+      const link = await generateLoginLink(env, email);
+      return Response.json({ link });
+    }
+    if (path === "/admin/audit" && method === "GET") {
+      const rows = await supabaseRpc(env, "admin_get_audit", {});
+      return Response.json(rows ?? []);
+    }
+    if (
+      path.startsWith("/admin/businesses/") &&
+      path.endsWith("/activity") &&
+      method === "GET"
+    ) {
+      const id = path.split("/")[3];
+      const [messages, replies] = await Promise.all([
+        supabaseGet(
+          env,
+          `messages?business_id=eq.${id}&select=id,status,mock,message_text,sent_at,clicked_at,created_at,customers(first_name,mobile)&order=created_at.desc&limit=50`,
+        ),
+        supabaseGet(
+          env,
+          `replies?business_id=eq.${id}&select=id,from_mobile,body,received_at&order=received_at.desc&limit=50`,
+        ),
+      ]);
+      return Response.json({ messages, replies });
+    }
+    return new Response("Not found", { status: 404 });
+  } catch (e) {
+    return Response.json({ error: String(e) }, { status: 400 });
+  }
+}
+
 // ---------- main ----------
 
 export default {
@@ -306,6 +451,12 @@ export default {
     const path = url.pathname;
 
     if (path === "/webhook") return handleWebhook(request, env);
+
+    if (path.startsWith("/admin/")) {
+      const admin = await verifyAdmin(request, env);
+      if (!admin) return new Response("Unauthorized", { status: 401 });
+      return handleAdmin(request, env, admin.userId);
+    }
 
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
     const stub = env.RATE_LIMITER.get(env.RATE_LIMITER.idFromName(ip));

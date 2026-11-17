@@ -2,6 +2,7 @@
 export const config = {
   brand: 'Mur Systems',
   product: 'Reviews by Mur Systems',
+  workerUrl: 'https://m.mursystems123.workers.dev',
   theme: {
     background: '#ffffff',
     surface: '#f4f4f5',

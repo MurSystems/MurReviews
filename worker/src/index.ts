@@ -400,6 +400,63 @@ async function handleOptOut(
   });
 }
 
+// ---------- public auth helper ----------
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// The login page asks whether an email belongs to an admin profile so it can
+// decide whether to offer the email sign-in link. Admin status lives in the
+// database (public.profiles.role); no admin email list ships in the frontend.
+async function handleAdminEmailCheck(
+  request: Request,
+  env: Env,
+  allowOrigin: string,
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return withCors(new Response("Method not allowed", { status: 405 }), allowOrigin);
+  }
+
+  const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const stub = env.RATE_LIMITER.get(
+    env.RATE_LIMITER.idFromName(`admin-check:${ip}`),
+  );
+  if (!(await stub.check(20, 60_000))) {
+    return withCors(
+      Response.json({ error: "rate_limited" }, { status: 429 }),
+      allowOrigin,
+    );
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return withCors(
+      Response.json({ error: "bad_request" }, { status: 400 }),
+      allowOrigin,
+    );
+  }
+
+  const email = String(body.email ?? "").trim().toLowerCase();
+  if (!email || email.length > 320 || !EMAIL_RE.test(email)) {
+    return withCors(
+      Response.json({ error: "invalid_email" }, { status: 400 }),
+      allowOrigin,
+    );
+  }
+
+  try {
+    const admin = await supabaseRpc(env, "is_admin_email", { p_email: email });
+    return withCors(Response.json({ admin: admin === true }), allowOrigin);
+  } catch (e) {
+    console.log(`[admin-check] lookup failed: ${e}`);
+    return withCors(
+      Response.json({ error: "unavailable" }, { status: 503 }),
+      allowOrigin,
+    );
+  }
+}
+
 // ---------- admin routes ----------
 
 async function verifyAdmin(
@@ -745,6 +802,10 @@ export default {
         Response.json({ places_connected: placesConfigured(env) }),
         allowOrigin,
       );
+    }
+
+    if (path === "/auth/is-admin") {
+      return handleAdminEmailCheck(request, env, allowOrigin);
     }
 
     if (path.startsWith("/admin/")) {

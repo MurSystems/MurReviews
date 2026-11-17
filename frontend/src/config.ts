@@ -7,10 +7,9 @@ export const config = {
   workerUrl: 'https://m.mursystems123.workers.dev',
   auth: {
     // Email sign-in links need working email delivery, which isn't set up for
-    // clients yet. Flip this once it is. Admin accounts can always use the
-    // link, so they can get in before they have set a password.
+    // clients yet. Flip this once it is. Admin accounts are recognised by the
+    // server (profiles.role = 'admin'), not by an email list in this bundle.
     signInLinkForEveryone: false,
-    adminEmails: ['mursystems123@gmail.com'],
   },
   whatsNew: {
     // Bump the version to show the notice again to every user.
@@ -25,8 +24,3 @@ export const config = {
     ink: '#14110d',
   },
 } as const;
-
-export function isAdminEmail(email: string): boolean {
-  const value = email.trim().toLowerCase();
-  return config.auth.adminEmails.some((known) => known === value);
-}

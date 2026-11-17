@@ -4,6 +4,9 @@ import {
   isMockSend,
   verifyHmacSignature,
   verifyAdminJwt,
+  verifyUserJwt,
+  parseWebhookEvent,
+  normaliseAuMobile,
   withCors,
   allowedOrigin,
   corsHeaders,
@@ -94,6 +97,7 @@ class RealSmsGateClient implements SmsGateClient {
     private baseUrl: string,
     private username: string,
     private password: string,
+    private deviceId?: string,
   ) {}
   async send(to: string, text: string): Promise<{ id: string }> {
     const res = await fetch(`${this.baseUrl}/3rdparty/v1/messages`, {
@@ -102,12 +106,48 @@ class RealSmsGateClient implements SmsGateClient {
         "Content-Type": "application/json",
         Authorization: `Basic ${btoa(`${this.username}:${this.password}`)}`,
       },
-      body: JSON.stringify({ textMessage: { text }, phoneNumbers: [to] }),
+      body: JSON.stringify({
+        textMessage: { text },
+        phoneNumbers: [to],
+        ...(this.deviceId ? { deviceId: this.deviceId } : {}),
+      }),
     });
-    if (!res.ok) throw new Error(`SMSGate send failed: ${res.status}`);
-    const data = (await res.json()) as { id?: string };
+    const raw = await res.text();
+    if (!res.ok) {
+      throw new Error(`SMSGate send failed (${res.status}): ${raw.slice(0, 200)}`);
+    }
+    let data: { id?: string } = {};
+    try {
+      data = raw ? JSON.parse(raw) : {};
+    } catch {
+      // A 2xx with no JSON body still means SMSGate accepted the message.
+    }
     return { id: data.id ?? "unknown" };
   }
+}
+
+type GatewayConfig = {
+  baseUrl: string;
+  username: string;
+  password: string;
+  deviceId?: string;
+};
+
+async function gatewayConfig(
+  env: Env,
+  businessId: string,
+): Promise<GatewayConfig | null> {
+  const rows = await supabaseRpc(env, "gateway_send_config", {
+    p_business_id: businessId,
+  });
+  const row = Array.isArray(rows) ? rows[0] : rows;
+  if (!row?.username || !row?.password) return null;
+  return {
+    baseUrl: row.base_url || "https://api.sms-gate.app",
+    username: row.username,
+    password: row.password,
+    deviceId: row.device_id || undefined,
+  };
 }
 
 class MobileMessageClient {
@@ -137,6 +177,7 @@ async function sendSms(
   mode: string,
   to: string,
   text: string,
+  businessId: string,
   sender?: string,
 ): Promise<void> {
   if (mode === "log_only") {
@@ -147,6 +188,18 @@ async function sendSms(
     console.log(
       `[mock] mode=${mode} to=${to} sender=${sender ?? "default"} text=${JSON.stringify(text)}`,
     );
+    return;
+  }
+  if (mode === "android_gateway") {
+    const cfg = await gatewayConfig(env, businessId);
+    if (!cfg) throw new Error("android_gateway has no connected phone");
+    const client = new RealSmsGateClient(
+      cfg.baseUrl,
+      cfg.username,
+      cfg.password,
+      cfg.deviceId,
+    );
+    await client.send(to, text);
     return;
   }
   if (mode === "sms_provider") {
@@ -199,7 +252,14 @@ async function runSender(env: Env): Promise<void> {
         continue;
       }
 
-      await sendSms(env, prep.send_mode, prep.mobile, prep.rendered_text, prep.sender_number);
+      await sendSms(
+        env,
+        prep.send_mode,
+        prep.mobile,
+        prep.rendered_text,
+        prep.business_id,
+        prep.sender_number,
+      );
       await supabaseRpc(env, "mark_sent", {
         p_message_id: msg.id,
         p_text: prep.rendered_text,
@@ -236,15 +296,14 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
     if (!ok) return new Response("Unauthorized", { status: 401 });
   }
 
-  let event: any;
+  let event: Record<string, unknown>;
   try {
-    event = JSON.parse(rawBody);
+    event = JSON.parse(rawBody) as Record<string, unknown>;
   } catch {
     return new Response("Bad request", { status: 400 });
   }
 
-  const type = event.event ?? event.type ?? "";
-  const deviceId = event.deviceId ?? "";
+  const { type, deviceId, fromMobile, body } = parseWebhookEvent(event);
 
   if (type === "system:ping" || type === "system:device_start") {
     await supabaseRpc(env, "touch_gateway", { p_device_id: deviceId });
@@ -254,8 +313,8 @@ async function handleWebhook(request: Request, env: Env): Promise<Response> {
   if (type === "sms:received") {
     await supabaseRpc(env, "handle_inbound_sms", {
       p_device_id: deviceId,
-      p_from_mobile: event.sender ?? "",
-      p_body: event.text ?? event.body ?? "",
+      p_from_mobile: fromMobile,
+      p_body: body,
     });
     return new Response("ok");
   }
@@ -423,7 +482,7 @@ async function handleAdmin(
         p_name: body.name,
         p_place_id: body.place_id,
         p_timezone: body.timezone ?? "Australia/Melbourne",
-        p_send_mode: body.send_mode ?? "sms_provider",
+        p_send_mode: body.send_mode ?? "android_gateway",
         p_delay_minutes: body.delay_minutes ?? 60,
         p_owner_id: ownerId,
         p_admin_id: userId,
@@ -497,6 +556,91 @@ async function handleAdmin(
     return new Response("Not found", { status: 404 });
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 400 });
+  }
+}
+
+// ---------- owner gateway routes ----------
+
+async function verifyUser(
+  request: Request,
+  env: Env,
+): Promise<{ userId: string } | null> {
+  const jwt = (request.headers.get("authorization") ?? "").replace(
+    /^Bearer\s+/i,
+    "",
+  );
+  const userId = await verifyUserJwt(jwt, env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
+  return userId ? { userId } : null;
+}
+
+// POST /gateway/test — send one text through the owner's connected phone.
+// The destination must be allowlisted while PRODUCTION is unset, and each
+// owner is limited to five tests an hour.
+async function handleGateway(
+  request: Request,
+  env: Env,
+  userId: string,
+): Promise<Response> {
+  const url = new URL(request.url);
+  if (url.pathname !== "/gateway/test" || request.method !== "POST") {
+    return new Response("Not found", { status: 404 });
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return Response.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  const businessId = String(body.business_id ?? "");
+  const mobile = normaliseAuMobile(String(body.mobile ?? ""));
+  if (!businessId) {
+    return Response.json({ error: "missing_business" }, { status: 400 });
+  }
+  if (!mobile) {
+    return Response.json({ error: "invalid_mobile" }, { status: 400 });
+  }
+
+  const allowlist = (env.SEND_ALLOWLIST ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!isAllowed("android_gateway", mobile, env.PRODUCTION ?? "", allowlist)) {
+    return Response.json({ error: "not_allowlisted" }, { status: 403 });
+  }
+
+  const stub = env.RATE_LIMITER.get(
+    env.RATE_LIMITER.idFromName(`gateway-test:${userId}`),
+  );
+  if (!(await stub.check(5, 3600_000))) {
+    return Response.json({ error: "rate_limited" }, { status: 429 });
+  }
+
+  const rows = await supabaseRpc(env, "owner_gateway_config", {
+    p_business_id: businessId,
+    p_user_id: userId,
+  });
+  const cfg = Array.isArray(rows) ? rows[0] : rows;
+  if (!cfg?.username || !cfg?.password) {
+    return Response.json({ error: "not_connected" }, { status: 400 });
+  }
+
+  try {
+    const client = new RealSmsGateClient(
+      cfg.base_url || "https://api.sms-gate.app",
+      cfg.username,
+      cfg.password,
+      cfg.device_id || undefined,
+    );
+    await client.send(
+      mobile,
+      "Mur Reviews test: your phone is connected and ready to send.",
+    );
+    return Response.json({ ok: true });
+  } catch (e) {
+    console.log(`[gateway-test] failed for ${businessId}: ${e}`);
+    return Response.json({ error: "send_failed" }, { status: 502 });
   }
 }
 
@@ -609,6 +753,17 @@ export default {
         return withCors(new Response("Unauthorized", { status: 401 }), allowOrigin);
       }
       return withCors(await handleAdmin(request, env, admin.userId), allowOrigin);
+    }
+
+    if (path.startsWith("/gateway/")) {
+      const user = await verifyUser(request, env);
+      if (!user) {
+        return withCors(new Response("Unauthorized", { status: 401 }), allowOrigin);
+      }
+      return withCors(
+        await handleGateway(request, env, user.userId),
+        allowOrigin,
+      );
     }
 
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";

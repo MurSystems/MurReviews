@@ -186,7 +186,7 @@ export default function AdminScreen() {
         name,
         place_id: String(fd.get('place_id') ?? '').trim(),
         timezone: String(fd.get('timezone') ?? 'Australia/Melbourne'),
-        send_mode: String(fd.get('send_mode') ?? 'sms_provider'),
+        send_mode: String(fd.get('send_mode') ?? 'android_gateway'),
         delay_minutes: Number(fd.get('delay') ?? 60),
         owner_email: String(fd.get('owner_email') ?? '').trim(),
       });
@@ -399,9 +399,9 @@ export default function AdminScreen() {
               </label>
               <label className="field">
                 <span>Send mode</span>
-                <select name="send_mode" defaultValue="sms_provider">
-                  <option value="sms_provider">SMS provider (Mobile Message)</option>
+                <select name="send_mode" defaultValue="android_gateway">
                   <option value="android_gateway">Android gateway (SMSGate)</option>
+                  <option value="sms_provider">SMS provider (Mobile Message)</option>
                   <option value="demo">Demo (no real text)</option>
                   <option value="log_only">Log only (no real text)</option>
                 </select>

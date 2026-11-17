@@ -48,6 +48,21 @@ export async function verifyHmacSignature(
   return diff === 0;
 }
 
+// Verify a caller's Supabase JWT. Returns the user id, or null if invalid.
+export async function verifyUserJwt(
+  jwt: string,
+  url: string,
+  anonKey: string,
+): Promise<string | null> {
+  if (!jwt) return null;
+  const userRes = await fetch(`${url}/auth/v1/user`, {
+    headers: { apikey: anonKey, Authorization: `Bearer ${jwt}` },
+  });
+  if (!userRes.ok) return null;
+  const user = (await userRes.json()) as { id?: string };
+  return user.id ?? null;
+}
+
 // Verify a caller's Supabase JWT and that their profile has the admin role.
 // Returns the user id, or null if the JWT is invalid or the user is not admin.
 export async function verifyAdminJwt(
@@ -56,23 +71,62 @@ export async function verifyAdminJwt(
   anonKey: string,
   serviceKey: string,
 ): Promise<string | null> {
-  if (!jwt) return null;
-
-  const userRes = await fetch(`${url}/auth/v1/user`, {
-    headers: { apikey: anonKey, Authorization: `Bearer ${jwt}` },
-  });
-  if (!userRes.ok) return null;
-  const user = (await userRes.json()) as { id: string };
+  const userId = await verifyUserJwt(jwt, url, anonKey);
+  if (!userId) return null;
 
   const profRes = await fetch(
-    `${url}/rest/v1/profiles?id=eq.${user.id}&role=eq.admin&select=id`,
+    `${url}/rest/v1/profiles?id=eq.${userId}&role=eq.admin&select=id`,
     {
       headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
     },
   );
   if (!profRes.ok) return null;
   const profs = (await profRes.json()) as unknown[];
-  return profs.length > 0 ? user.id : null;
+  return profs.length > 0 ? userId : null;
+}
+
+// SMSGate posts {event, deviceId, payload:{sender,message,...}}. Older/self-
+// hosted builds put sender/text at the top level, so read both.
+export interface WebhookEventInfo {
+  type: string;
+  deviceId: string;
+  fromMobile: string;
+  body: string;
+}
+
+export function parseWebhookEvent(
+  event: Record<string, unknown> | null | undefined,
+): WebhookEventInfo {
+  const payload = (event?.payload ?? {}) as Record<string, unknown>;
+  const pick = (...values: unknown[]): string => {
+    for (const v of values) {
+      if (typeof v === "string" && v !== "") return v;
+    }
+    return "";
+  };
+  return {
+    type: pick(event?.event, event?.type),
+    deviceId: pick(event?.deviceId),
+    fromMobile: pick(payload.sender, event?.sender, payload.phoneNumber),
+    body: pick(payload.message, event?.text, event?.body),
+  };
+}
+
+// Same rule as public.normalise_au_mobile in the database.
+export function normaliseAuMobile(
+  mobile: string | null | undefined,
+): string | null {
+  if (!mobile) return null;
+  let digits = mobile.replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.length === 11 && digits.startsWith("61")) {
+    digits = "0" + digits.slice(2);
+  } else if (digits.length === 9 && digits.startsWith("4")) {
+    digits = "0" + digits;
+  } else if (!(digits.length === 10 && digits.startsWith("04"))) {
+    return null;
+  }
+  return /^04[0-9]{8}$/.test(digits) ? "+61" + digits.slice(1) : null;
 }
 
 // CORS: allow only origins listed in CORS_ORIGINS (echo back the request's

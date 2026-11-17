@@ -4,6 +4,9 @@ import {
   isMockSend,
   verifyHmacSignature,
   verifyAdminJwt,
+  verifyUserJwt,
+  parseWebhookEvent,
+  normaliseAuMobile,
   withCors,
   allowedOrigin,
   generateAuthLink,
@@ -36,9 +39,97 @@ describe("isMockSend", () => {
     expect(isMockSend("sms_provider", "false")).toBe(true);
     expect(isMockSend("demo", "TRUE")).toBe(true);
   });
-  it("only treats a live sms_provider/demo send as real", () => {
+  it("only treats a live sms_provider/android_gateway send as real", () => {
     expect(isMockSend("sms_provider", "true")).toBe(false);
-    expect(isMockSend("demo", "true")).toBe(false);
+    expect(isMockSend("android_gateway", "true")).toBe(false);
+    expect(isMockSend("android_gateway", "false")).toBe(true);
+  });
+});
+
+describe("verifyUserJwt", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("returns the user id for a valid JWT", async () => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ id: "user-1" }), {
+        status: 200,
+      })) as typeof fetch;
+    expect(await verifyUserJwt("jwt", "https://x.supabase.co", "anon")).toBe(
+      "user-1",
+    );
+  });
+
+  it("rejects an invalid JWT", async () => {
+    globalThis.fetch = (async () =>
+      new Response("", { status: 401 })) as typeof fetch;
+    expect(await verifyUserJwt("bad", "https://x.supabase.co", "anon")).toBeNull();
+  });
+
+  it("rejects a missing JWT without calling Supabase", async () => {
+    let called = false;
+    globalThis.fetch = (async () => {
+      called = true;
+      return new Response("");
+    }) as typeof fetch;
+    expect(await verifyUserJwt("", "https://x.supabase.co", "anon")).toBeNull();
+    expect(called).toBe(false);
+  });
+});
+
+describe("parseWebhookEvent", () => {
+  it("reads SMSGate cloud events (payload nested)", () => {
+    expect(
+      parseWebhookEvent({
+        event: "sms:received",
+        deviceId: "dev-1",
+        payload: { sender: "+61411111111", message: "STOP" },
+      }),
+    ).toEqual({
+      type: "sms:received",
+      deviceId: "dev-1",
+      fromMobile: "+61411111111",
+      body: "STOP",
+    });
+  });
+
+  it("reads legacy top-level events", () => {
+    expect(
+      parseWebhookEvent({
+        type: "sms:received",
+        deviceId: "dev-2",
+        sender: "+61422222222",
+        text: "hello",
+      }),
+    ).toEqual({
+      type: "sms:received",
+      deviceId: "dev-2",
+      fromMobile: "+61422222222",
+      body: "hello",
+    });
+  });
+
+  it("does not throw on a ping without a payload", () => {
+    expect(parseWebhookEvent({ event: "system:ping", deviceId: "d" })).toEqual({
+      type: "system:ping",
+      deviceId: "d",
+      fromMobile: "",
+      body: "",
+    });
+  });
+});
+
+describe("normaliseAuMobile", () => {
+  it("normalises national, spaced and +61 numbers", () => {
+    expect(normaliseAuMobile("0412 345 678")).toBe("+61412345678");
+    expect(normaliseAuMobile("61412345678")).toBe("+61412345678");
+    expect(normaliseAuMobile("+61 412 345 678")).toBe("+61412345678");
+    expect(normaliseAuMobile("412345678")).toBe("+61412345678");
+  });
+
+  it("rejects landlines and junk", () => {
+    expect(normaliseAuMobile("0398765432")).toBeNull();
+    expect(normaliseAuMobile("12345")).toBeNull();
+    expect(normaliseAuMobile(null)).toBeNull();
   });
 });
 

@@ -5,6 +5,7 @@ import { friendlyError } from '../errors';
 import { saveTheme } from '../theme';
 import { useTheme } from '../useTheme';
 import { initials } from '../initials';
+import PhoneGateway from './PhoneGateway';
 
 const MAX_LOGO_BYTES = 1024 * 1024;
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -240,7 +241,7 @@ export default function Settings() {
     <div className="page">
       <header className="screen-head">
         <h1>Settings</h1>
-        <p className="muted">Your password, appearance, logo and customer imports.</p>
+        <p className="muted">Your phone, password, appearance, logo and customer imports.</p>
       </header>
 
       {notice && (
@@ -308,6 +309,8 @@ export default function Settings() {
           </button>
         </div>
       </section>
+
+      {business && <PhoneGateway businessId={business.id} />}
 
       <section className="card screen-section">
         <h2>Business logo</h2>

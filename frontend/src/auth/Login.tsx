@@ -124,6 +124,12 @@ export default function Login({ linkError = '' }: { linkError?: string }) {
             {error}
           </p>
         )}
+
+        <p className="legal-links">
+          <a href="/terms">Terms of Service</a>
+          <span aria-hidden="true">·</span>
+          <a href="/privacy">Privacy Policy</a>
+        </p>
       </div>
     </div>
   );

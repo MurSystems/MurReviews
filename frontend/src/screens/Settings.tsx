@@ -447,6 +447,21 @@ export default function Settings() {
           </button>
         )}
       </section>
+
+      <section className="card screen-section">
+        <h2>Legal</h2>
+        <p className="muted" style={{ margin: 0 }}>
+          How the service works and how you and your customers’ information is handled.
+        </p>
+        <p className="legal-links">
+          <a href="/terms">Terms of Service</a>
+          <span aria-hidden="true">·</span>
+          <a href="/privacy">Privacy Policy</a>
+        </p>
+        <p className="hint" style={{ margin: 0 }}>
+          Both documents are drafts pending legal review.
+        </p>
+      </section>
     </div>
   );
 }

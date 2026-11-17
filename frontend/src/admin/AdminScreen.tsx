@@ -6,19 +6,30 @@ import { config } from '../config';
 const WORKER = config.workerUrl;
 
 async function adminFetch(path: string, method = 'GET', body?: unknown) {
-  const { data } = await supabase.auth.getSession();
-  const jwt = data.session?.access_token;
-  const res = await fetch(`${WORKER}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${jwt}`,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const jwt = data.session?.access_token;
+    res = await fetch(`${WORKER}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    throw new Error(
+      'Could not reach the admin server. Check the Worker is deployed and CORS is enabled.',
+    );
+  }
   const text = await res.text();
-  if (!res.ok) throw new Error(text || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`Admin server error (${res.status}): ${text}`);
   return text ? JSON.parse(text) : null;
+}
+
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
 }
 
 const PLACE_ID_FINDER = 'https://developers.google.com/maps/documentation/places/web-service/place-id';
@@ -45,7 +56,7 @@ export default function AdminScreen() {
       setBusinesses((await adminFetch('/admin/businesses')) ?? []);
       setAudit((await adminFetch('/admin/audit')) ?? []);
     } catch (e) {
-      setMsg(String(e));
+      setMsg(errMsg(e));
     }
   }
 
@@ -66,7 +77,7 @@ export default function AdminScreen() {
       setMsg('Business created.');
       refresh();
     } catch (err) {
-      setMsg(String(err));
+      setMsg(errMsg(err));
     }
   }
 
@@ -77,7 +88,7 @@ export default function AdminScreen() {
       setMsg(`Status set to ${status}.`);
       refresh();
     } catch (err) {
-      setMsg(String(err));
+      setMsg(errMsg(err));
     }
   }
 
@@ -91,7 +102,7 @@ export default function AdminScreen() {
       });
       setMsg(`Login link: ${link}`);
     } catch (err) {
-      setMsg(String(err));
+      setMsg(errMsg(err));
     }
   }
 
@@ -106,7 +117,7 @@ export default function AdminScreen() {
       });
       setMsg(`Demo send: ${r?.outcome}${r?.demo_text ? ` — "${r.demo_text}"` : ''}`);
     } catch (err) {
-      setMsg(String(err));
+      setMsg(errMsg(err));
     }
   }
 
@@ -116,7 +127,7 @@ export default function AdminScreen() {
     try {
       setActivity(await adminFetch(`/admin/businesses/${id}/activity`));
     } catch (err) {
-      setMsg(String(err));
+      setMsg(errMsg(err));
     }
   }
 

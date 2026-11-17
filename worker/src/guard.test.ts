@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { isAllowed, verifyHmacSignature, verifyAdminJwt } from "./guard";
+import {
+  isAllowed,
+  verifyHmacSignature,
+  verifyAdminJwt,
+  withCors,
+} from "./guard";
 
 describe("isAllowed", () => {
   it("allows log_only always", () => {
@@ -107,5 +112,15 @@ describe("verifyAdminJwt", () => {
 
   it("rejects a missing JWT", async () => {
     expect(await verifyAdminJwt("", url, anon, svc)).toBeNull();
+  });
+});
+
+describe("withCors", () => {
+  it("adds CORS headers so the browser app can call the Worker", () => {
+    const res = withCors(new Response("ok"));
+    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(res.headers.get("access-control-allow-methods")).toContain("OPTIONS");
+    expect(res.headers.get("access-control-allow-headers")).toContain("Authorization");
   });
 });

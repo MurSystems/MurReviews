@@ -67,3 +67,18 @@ export async function verifyAdminJwt(
   const profs = (await profRes.json()) as unknown[];
   return profs.length > 0 ? user.id : null;
 }
+
+// CORS for the browser-facing routes (the owner/admin app runs on localhost
+// during dev and on Cloudflare Pages later).
+export const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Authorization, Content-Type",
+  "Access-Control-Max-Age": "86400",
+};
+
+export function withCors(res: Response): Response {
+  const headers = new Headers(res.headers);
+  for (const [k, v] of Object.entries(CORS_HEADERS)) headers.set(k, v);
+  return new Response(res.body, { status: res.status, headers });
+}

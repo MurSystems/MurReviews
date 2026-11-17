@@ -1,5 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
-import { isAllowed, verifyHmacSignature, verifyAdminJwt } from "./guard";
+import {
+  isAllowed,
+  verifyHmacSignature,
+  verifyAdminJwt,
+  withCors,
+  CORS_HEADERS,
+} from "./guard";
 
 export interface Env {
   RATE_LIMITER: DurableObjectNamespace<RateLimiter>;
@@ -331,24 +337,19 @@ async function supabaseGet(env: Env, path: string): Promise<any> {
 }
 
 async function generateLoginLink(env: Env, email: string): Promise<string> {
-  const headers = {
-    apikey: env.SUPABASE_SERVICE_ROLE_KEY,
-    Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
-    "Content-Type": "application/json",
-  };
-  let res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/generate_link`, {
+  const res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/generate_link`, {
     method: "POST",
-    headers,
+    headers: {
+      apikey: env.SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ type: "magiclink", email }),
   });
   if (!res.ok) {
-    res = await fetch(`${env.SUPABASE_URL}/auth/v1/admin/generate_link`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ type: "signup", email }),
-    });
+    const body = await res.text();
+    throw new Error(`generate_link failed (${res.status}): ${body}`);
   }
-  if (!res.ok) throw new Error(`generate_link failed: ${res.status}`);
   const data = (await res.json()) as { action_link?: string };
   return data.action_link ?? "";
 }
@@ -369,9 +370,15 @@ async function handleAdmin(
     }
     if (path === "/admin/businesses" && method === "POST") {
       const body = (await request.json()) as Record<string, any>;
-      const ownerId = await supabaseRpc(env, "admin_ensure_owner", {
+      const ownerId = await supabaseRpc(env, "admin_find_owner", {
         p_email: body.owner_email,
       });
+      if (!ownerId) {
+        return Response.json(
+          { error: "Owner email not found — generate a login link first." },
+          { status: 400 },
+        );
+      }
       const rows = await supabaseRpc(env, "admin_create_business", {
         p_name: body.name,
         p_place_id: body.place_id,
@@ -411,7 +418,6 @@ async function handleAdmin(
       const body = (await request.json()) as Record<string, any>;
       const email = String(body.email ?? "").trim();
       if (!email) return new Response("Bad request", { status: 400 });
-      await supabaseRpc(env, "admin_ensure_owner", { p_email: email });
       const link = await generateLoginLink(env, email);
       return Response.json({ link });
     }
@@ -447,6 +453,10 @@ async function handleAdmin(
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
+    }
+
     const url = new URL(request.url);
     const path = url.pathname;
 
@@ -454,19 +464,23 @@ export default {
 
     if (path.startsWith("/admin/")) {
       const admin = await verifyAdmin(request, env);
-      if (!admin) return new Response("Unauthorized", { status: 401 });
-      return handleAdmin(request, env, admin.userId);
+      if (!admin) return withCors(new Response("Unauthorized", { status: 401 }));
+      return withCors(await handleAdmin(request, env, admin.userId));
     }
 
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
     const stub = env.RATE_LIMITER.get(env.RATE_LIMITER.idFromName(ip));
     if (!(await stub.check(100, 60_000))) {
-      return new Response("Too many requests", { status: 429 });
+      return withCors(new Response("Too many requests", { status: 429 }));
     }
 
-    if (path.startsWith("/r/")) return handleReview(request, env, path.slice(3));
-    if (path.startsWith("/o/")) return handleOptOut(request, env, path.slice(3));
-    return new Response("Not found", { status: 404 });
+    if (path.startsWith("/r/")) {
+      return withCors(await handleReview(request, env, path.slice(3)));
+    }
+    if (path.startsWith("/o/")) {
+      return withCors(await handleOptOut(request, env, path.slice(3)));
+    }
+    return withCors(new Response("Not found", { status: 404 }));
   },
 
   async scheduled(_controller: ScheduledController, env: Env): Promise<void> {

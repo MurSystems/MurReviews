@@ -19,17 +19,29 @@ async function adminFetch(path: string, method = 'GET', body?: unknown) {
       body: body ? JSON.stringify(body) : undefined,
     });
   } catch {
-    throw new Error(
-      'Could not reach the admin server. Check the Worker is deployed and CORS is enabled.',
-    );
+    throw new Error('Could not reach the admin server. Check your connection and try again.');
+  }
+  if (!res.ok) {
+    if (res.status === 401 || res.status === 403) {
+      throw new Error('Your session has ended. Log in again.');
+    }
+    if (res.status === 404) throw new Error('That item no longer exists.');
+    if (res.status >= 500) {
+      throw new Error('The admin server is having trouble. Try again in a moment.');
+    }
+    throw new Error('The admin server refused that request. Try again.');
   }
   const text = await res.text();
-  if (!res.ok) throw new Error(`Admin server error (${res.status}): ${text}`);
-  return text ? JSON.parse(text) : null;
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('The admin server sent something we couldn’t read. Try again.');
+  }
 }
 
 function errMsg(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
+  return e instanceof Error ? e.message : 'Something went wrong. Try again.';
 }
 
 const PLACE_ID_FINDER = 'https://developers.google.com/maps/documentation/places/web-service/place-id';

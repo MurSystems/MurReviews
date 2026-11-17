@@ -5,6 +5,13 @@ export const config = {
   product: 'Mur Reviews',
   byline: 'by Mur Systems',
   workerUrl: 'https://m.mursystems123.workers.dev',
+  auth: {
+    // Email sign-in links need working email delivery, which isn't set up for
+    // clients yet. Flip this once it is. Admin accounts can always use the
+    // link, so they can get in before they have set a password.
+    signInLinkForEveryone: false,
+    adminEmails: ['mursystems123@gmail.com'],
+  },
   whatsNew: {
     // Bump the version to show the notice again to every user.
     version: '2026-11-17',
@@ -18,3 +25,8 @@ export const config = {
     ink: '#14110d',
   },
 } as const;
+
+export function isAdminEmail(email: string): boolean {
+  const value = email.trim().toLowerCase();
+  return config.auth.adminEmails.some((known) => known === value);
+}

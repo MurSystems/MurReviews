@@ -1,28 +1,24 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { supabase } from '../supabase';
-import { config } from '../config';
+import { config, isAdminEmail } from '../config';
+import { friendlyError } from '../errors';
 import Logo from '../components/Logo';
 
-function friendlyError(message: string): string {
-  if (/invalid login credentials/i.test(message)) {
-    return 'That email and password don’t match. Check them and try again.';
-  }
-  if (/email not confirmed/i.test(message)) {
-    return 'Confirm your email first — open the link we sent you.';
-  }
-  if (/rate limit|too many/i.test(message)) {
-    return 'Too many attempts. Wait a minute and try again.';
-  }
-  return message;
+function validEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [sent, setSent] = useState(false);
+  const [forgot, setForgot] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const canUseSignInLink =
+    config.auth.signInLinkForEveryone || isAdminEmail(email);
 
   async function onSubmitPassword(e: FormEvent) {
     e.preventDefault();
@@ -40,9 +36,20 @@ export default function Login() {
   async function onMagicLink() {
     setError('');
     setSent(false);
+
+    const value = email.trim();
+    if (!value) {
+      setError('Enter your email first.');
+      return;
+    }
+    if (!validEmail(value)) {
+      setError('Enter a valid email address.');
+      return;
+    }
+
     setBusy(true);
     const { error } = await supabase.auth.signInWithOtp({
-      email: email.trim(),
+      email: value,
       options: { emailRedirectTo: window.location.origin },
     });
     setBusy(false);
@@ -51,9 +58,9 @@ export default function Login() {
   }
 
   return (
-    <div className="auth dark">
+    <div className="auth">
       <div className="auth-card">
-        <Logo size={88} />
+        <Logo size={88} compact />
         <h1 className="auth-title">{config.product}</h1>
         <p className="auth-byline">{config.byline}</p>
 
@@ -83,9 +90,25 @@ export default function Login() {
           </button>
         </form>
 
-        <button type="button" className="btn-ghost" disabled={busy} onClick={onMagicLink}>
-          Email me a sign-in link instead
+        {canUseSignInLink && (
+          <button type="button" className="btn-ghost" disabled={busy} onClick={onMagicLink}>
+            Email me a sign-in link instead
+          </button>
+        )}
+
+        <button
+          type="button"
+          className="btn-ghost"
+          aria-expanded={forgot}
+          onClick={() => setForgot((open) => !open)}
+        >
+          Forgot password?
         </button>
+        {forgot && (
+          <p className="hint" role="status">
+            Password resets aren’t set up yet. Contact Mur Systems and we’ll reset it for you.
+          </p>
+        )}
 
         {sent && (
           <p className="ok" role="status">

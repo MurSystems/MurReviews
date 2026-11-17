@@ -15,6 +15,8 @@
 
 **Done 2026-11-17 (UI pass, Session 2)**: Activity, Dashboard, Settings/Import and Admin restyled on the shared layout/type system and phone width. Activity now lists the latest 20 texts and replies instead of the placeholder. Settings has a "Coming soon" AI-replies card whose once-per-business "I want this" button writes to `public.ai_reply_interest`. Admin runs on the dark shell (black/gold), every field is labelled, generated links have Copy buttons, and the business listing shows who wants AI replies.
 
+**Done 2026-11-17 (UI fixes, Session 3)**: Login shows the name once (compact ring mark + "Mur Reviews" heading). Light is now the default everywhere, including login and admin; Settings → Appearance toggles light/dark, saved per device (`mur-theme`), and the choice drives `html.dark`, the PWA `theme-color` and the manifest colours. Primary buttons are ink/ivory in light; dark keeps black/gold. The "Email me a sign-in link instead" option is hidden for clients (`config.auth.signInLinkForEveryone: false`) and shown only for admin emails (`config.auth.adminEmails`), and it validates the email first ("Enter your email first."). Settings has "Set or change password" for any logged-in user. Login has "Forgot password?" explaining to contact Mur Systems until reset email is set up. All auth/storage/DB/Worker messages pass through `frontend/src/errors.ts`, so no raw technical text reaches the screen; `adminFetch` no longer includes the response body in errors.
+
 
 ## Decisions made
 - **Stack**: React+Vite PWA · Cloudflare Workers (free) · Supabase Postgres+auth+storage (free).
@@ -23,15 +25,15 @@
 - **Send modes**: `sms_provider` (default, Mobile Message) · `android_gateway` (SMSGate, optional) · `demo` · `log_only`. Live switch = `SENDER_LIVE` (off). `PRODUCTION` unset. `SEND_ALLOWLIST` = operator's number only.
 - **SMSGate**: cloud relay recommended; E2E (RSA+AES-GCM) **not** implemented (deferred). **Mobile Message**: sender = "own mobile number", verified in dashboard (4-digit code), no documented limit; ACMA Register is for business-name senders only.
 - **Defaults**: delay 60 min · quiet hours 9am–8pm (Melbourne) · reminder at 3 days · `daily_send_cap` (import drip) **15** · `daily_text_cap` **100** · `monthly_text_cap` **500** · `trial_text_cap` **30** · demo send 1/30d per number + 20/day · tokens 8-char base62.
-- **Brand**: product **"Mur Reviews"**, company **"Mur Systems"** ("by Mur Systems" on the login page only). Colours: black `#0c0c0c`, gold `#c8a45c`, ivory `#f4efe6`, ink `#14110d`. Cinzel (Google Fonts) for the logo, product/business names and headings only; everything else sans-serif. Gold on black; on ivory, text and buttons are ink and gold is only thin lines/small accents. All in `frontend/src/config.ts`.
+- **Brand**: product **"Mur Reviews"**, company **"Mur Systems"** ("by Mur Systems" on the login page only). Colours: black `#0c0c0c`, gold `#c8a45c`, ivory `#f4efe6`, ink `#14110d`. Cinzel (Google Fonts) for the logo, product/business names and headings only; everything else sans-serif. Light is the default theme; dark (black/gold) is opt-in per device from Settings → Appearance. On ivory, text and buttons are ink and gold is only thin lines/small accents. All in `frontend/src/config.ts`.
 - **Logo**: code-only component `frontend/src/components/Logo.tsx` — Cinzel "M" in a thin outer ring + slightly heavier inner ring, with a "MUR REVIEWS" wordmark; `compact` prop gives the ring-only mark used in the owner header.
 - **What's new**: `config.whatsNew.version` + `message`; shown once per user, dismissed in localStorage under `mur-whats-new:<userId>`.
 - **App icon/PWA**: gold M ring on black, PNGs 32/180/192/512 in `frontend/public/`; manifest name "Mur Reviews". The old purple `favicon.svg` was removed.
 - **Templates**: shortened; end with `Opt out: {opt_out}`; one segment (two only for long names). Mock sends carry `messages.mock=true` and are excluded from all stats.
 - **Activity**: owner screen reads the latest 20 `messages` and 20 `replies` directly (RLS-scoped) — no placeholder left.
 - **AI reply interest**: `public.ai_reply_interest` (PK `business_id`, `requested_by`, `created_at`); owners may select/insert their own row, update/delete revoked, so one request per business. `admin_list_businesses()` now returns `ai_replies_requested_at`, which the admin table renders as a gold pill.
-- **Admin theme**: the Shell switches to the dark token set while the Admin tab is open, so header, tabbar and content are black with gold accents.
-- **Auth**: email+password (primary) + magic link (secondary); owners onboarded via `invite` (set-password) link, reset via `recovery`.
+- **Admin theme**: admin uses the same theme as the owner app (light by default, dark when selected); it no longer forces the dark token set.
+- **Auth**: email+password (primary) + magic link (secondary); owners onboarded via `invite` (set-password) link, reset via `recovery`. The login magic-link option is limited to admin emails until client email delivery is set up (`config.auth.signInLinkForEveryone`). Any logged-in user can set/change their password in Settings. "Forgot password?" tells users to contact Mur Systems until reset email exists. Error copy is mapped in `frontend/src/errors.ts` — never show a raw Supabase/Postgres/Worker message.
 
 ## Env vars & secrets (names only)
 - **Root `.env`**: `SUPABASE_DB_PASSWORD`, `MOBILE_MESSAGE_USERNAME`, `MOBILE_MESSAGE_PASSWORD`, `GOOGLE_PLACES_API_KEY`.
@@ -48,5 +50,5 @@
 - Deploy frontend: `cd frontend && npm run build && npx wrangler deploy --name mur-reviews`. The live Worker is `mur-reviews`; the Vite config's own name is `frontend`, so pass `--name` or it deploys a second Worker.
 - Cloudflare auth: `cd worker && npx wrangler login --device` (OAuth token expires; device flow avoids the localhost callback). `CLOUDFLARE_ACCOUNT_ID` is `b228d54762c8a6aab17f5d26c8f84d5a`.
 
-## Next step (Session 3 — README)
+## Next step (Session 4 — README)
 Finalise `README.md`: correct the title/brand to "Mur Reviews" (currently "Reviews by Mur Systems"), keep the existing setup steps, and document the AI-replies interest feature and the `GOOGLE_PLACES_API_KEY` optional switch. Then update this file, commit, push.

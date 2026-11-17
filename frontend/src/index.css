@@ -1,8 +1,10 @@
 /* Brand tokens: black #0c0c0c, gold #c8a45c, ivory #f4efe6, ink #14110d.
-   Injected from src/config.ts by main.tsx. The owner app is ivory on ink; the
-   login and admin screens add `.dark` for black on gold. Gold is never body
-   text on ivory — only thin lines and small accents. */
+   Injected from src/config.ts by main.tsx. Light is the default everywhere:
+   ivory background, ink text and buttons, gold only for thin lines and small
+   accents. Adding `.dark` to <html> (Settings → Appearance) switches to the
+   original black-and-gold look for the whole app, including login and admin. */
 :root {
+  color-scheme: light;
   --bg: var(--ivory);
   --text: var(--ink);
   --text-muted: #5f574a;
@@ -15,6 +17,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --bg: var(--black);
   --text: var(--ivory);
   --text-muted: #b8b0a2;
@@ -319,8 +322,8 @@ button:disabled {
   display: grid;
   place-items: center;
   padding: 28px 16px;
-  background: var(--black);
-  color: var(--ivory);
+  background: var(--bg);
+  color: var(--text);
 }
 
 .auth-card {
@@ -330,7 +333,7 @@ button:disabled {
   flex-direction: column;
   align-items: stretch;
   gap: 14px;
-  color: var(--gold);
+  color: var(--accent);
 }
 
 .auth-card form {
@@ -341,13 +344,13 @@ button:disabled {
 }
 
 .auth-card label.field > span {
-  color: var(--ivory);
+  color: var(--text);
 }
 
 .auth-card input {
   background: var(--surface);
   border-color: var(--line);
-  color: var(--ivory);
+  color: var(--text);
 }
 
 .auth-title {
@@ -356,19 +359,22 @@ button:disabled {
   line-height: 1.2;
   letter-spacing: 0.12em;
   text-align: center;
-  color: var(--gold);
+  color: var(--accent);
 }
 
 .auth-byline {
   margin: -8px 0 8px;
   text-align: center;
   font-size: 14px;
-  color: var(--ivory);
-  opacity: 0.8;
+  color: var(--text-muted);
 }
 
 .auth-card .btn-ghost {
-  color: var(--ivory);
+  color: var(--text);
+}
+
+.auth-card .hint {
+  text-align: center;
 }
 
 .auth-card .error {
@@ -636,6 +642,11 @@ th {
 
 .admin h1,
 .admin h2 {
+  color: var(--text);
+}
+
+.dark .admin h1,
+.dark .admin h2 {
   color: var(--gold);
 }
 
@@ -664,8 +675,12 @@ th {
 }
 
 .subnav button.active {
-  color: var(--gold);
+  color: var(--text);
   border-bottom-color: var(--gold);
+}
+
+.dark .subnav button.active {
+  color: var(--gold);
 }
 
 .pill {

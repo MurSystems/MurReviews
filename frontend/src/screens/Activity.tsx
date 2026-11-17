@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
+import { OWN_PHONE_REPLY_NOTE, repliesReachApp } from '../replies';
 
 type Message = {
   id: string;
@@ -111,7 +112,7 @@ export default function Activity() {
     };
   }, []);
 
-  const fromOwnPhone = sendMode === 'android_gateway';
+  const showReplies = repliesReachApp(sendMode);
 
   return (
     <div className="page">
@@ -154,11 +155,8 @@ export default function Activity() {
 
           <section className="screen-section">
             <h2>Replies</h2>
-            {fromOwnPhone ? (
-              <p className="empty">
-                Replies come straight to your phone, since texts are sent from your own
-                number.
-              </p>
+            {!showReplies ? (
+              <p className="empty">{OWN_PHONE_REPLY_NOTE}</p>
             ) : replies.length === 0 ? (
               <p className="empty">No replies yet. They’ll appear here when customers text back.</p>
             ) : (

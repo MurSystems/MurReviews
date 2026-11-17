@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { supabase } from '../supabase';
 import { config } from '../config';
+import { OWN_PHONE_REPLY_NOTE, repliesReachApp } from '../replies';
 
 const WORKER = config.workerUrl;
 
@@ -79,6 +80,14 @@ function shortDate(iso: string): string {
   return `wanted ${date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}`;
 }
 
+function todayMelbourne(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Melbourne' }).format(new Date());
+}
+
+function percent(rate: number | null | undefined): string {
+  return `${Math.round((rate ?? 0) * 100)}%`;
+}
+
 type Business = {
   id: string;
   name: string;
@@ -93,6 +102,14 @@ type Business = {
   texts_used_this_month: number;
   monthly_text_cap: number;
   monthly_state: 'ok' | 'warning' | 'paused';
+  texts_sent_this_month: number;
+  clicks_this_month: number;
+  click_rate_this_month: number;
+  review_count: number | null;
+  rating: number | null;
+  starting_review_count: number | null;
+  reviews_gained: number | null;
+  last_snapshot_date: string | null;
 };
 
 type AuditRow = {
@@ -191,7 +208,7 @@ export default function AdminScreen() {
   const [placesUsage, setPlacesUsage] = useState<{ rows: { request_count: number }[]; cap: number } | null>(
     null,
   );
-  const [viewAs, setViewAs] = useState<{ id: string; name: string } | null>(null);
+  const [viewAs, setViewAs] = useState<{ id: string; name: string; sendMode: string } | null>(null);
   const [activity, setActivity] = useState<ActivityData | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
   const [newPlaceId, setNewPlaceId] = useState('');
@@ -228,6 +245,7 @@ export default function AdminScreen() {
         send_mode: String(fd.get('send_mode') ?? 'android_gateway'),
         delay_minutes: Number(fd.get('delay') ?? 60),
         owner_email: String(fd.get('owner_email') ?? '').trim(),
+        review_count: String(fd.get('review_count') ?? '').trim() || null,
       });
       form.reset();
       setNewPlaceId('');
@@ -265,6 +283,27 @@ export default function AdminScreen() {
         monthly_text_cap: cap,
       });
       setNotice({ kind: 'ok', text: `Monthly allowance set to ${cap} texts.` });
+      refresh();
+    } catch (err) {
+      showError(err);
+    }
+  }
+
+  async function onSetReviewCount(e: FormEvent) {
+    e.preventDefault();
+    const form = e.currentTarget as HTMLFormElement;
+    const fd = new FormData(form);
+    const id = String(fd.get('business_id') ?? '');
+    const count = Number(fd.get('review_count'));
+    const ratingRaw = String(fd.get('rating') ?? '').trim();
+    setNotice(null);
+    try {
+      await adminFetch(`/admin/businesses/${id}/review-count`, 'POST', {
+        review_count: count,
+        snapshot_date: String(fd.get('snapshot_date') ?? ''),
+        rating: ratingRaw === '' ? null : Number(ratingRaw),
+      });
+      setNotice({ kind: 'ok', text: `Google review count set to ${count}.` });
       refresh();
     } catch (err) {
       showError(err);
@@ -325,8 +364,8 @@ export default function AdminScreen() {
     }
   }
 
-  async function onViewAs(id: string, name: string) {
-    setViewAs({ id, name });
+  async function onViewAs(id: string, name: string, sendMode: string) {
+    setViewAs({ id, name, sendMode });
     setActivity(null);
     setNotice(null);
     try {
@@ -406,7 +445,9 @@ export default function AdminScreen() {
               </section>
               <section className="screen-section">
                 <h2>Replies</h2>
-                {activity.replies.length === 0 ? (
+                {!repliesReachApp(viewAs.sendMode) ? (
+                  <p className="empty">{OWN_PHONE_REPLY_NOTE}</p>
+                ) : activity.replies.length === 0 ? (
                   <p className="empty">No replies yet.</p>
                 ) : (
                   <ul className="list">
@@ -521,6 +562,18 @@ export default function AdminScreen() {
                 <input name="delay" type="number" min={0} defaultValue={60} />
               </label>
               <label className="field">
+                <span>Google review count today (optional)</span>
+                <input
+                  name="review_count"
+                  type="number"
+                  min={0}
+                  placeholder="e.g. 42"
+                />
+              </label>
+              <p className="field-note">
+                This is the starting point for “reviews gained since joining”.
+              </p>
+              <label className="field">
                 <span>Owner email</span>
                 <input name="owner_email" type="email" placeholder="owner@business.com" required />
               </label>
@@ -541,9 +594,8 @@ export default function AdminScreen() {
                       <th>Name</th>
                       <th>Status</th>
                       <th>Mode</th>
-                      <th>Sent</th>
-                      <th>Clicks</th>
-                      <th>This month</th>
+                      <th>Results</th>
+                      <th>Google reviews</th>
                       <th>Allowance</th>
                       <th>Gateway</th>
                       <th>AI replies</th>
@@ -565,8 +617,64 @@ export default function AdminScreen() {
                         </td>
                         <td>{b.status}</td>
                         <td>{b.send_mode}</td>
-                        <td>{b.texts_sent}</td>
-                        <td>{b.clicks}</td>
+                        <td>
+                          <p className="hint">
+                            This month: {b.texts_sent_this_month} texts · {b.clicks_this_month}{' '}
+                            clicks · {percent(b.click_rate_this_month)}
+                          </p>
+                          <p className="hint">
+                            All time: {b.texts_sent} texts · {b.clicks} clicks ·{' '}
+                            {percent(b.texts_sent > 0 ? b.clicks / b.texts_sent : 0)}
+                          </p>
+                        </td>
+                        <td>
+                          <p className="hint">
+                            {b.review_count === null
+                              ? 'No count yet'
+                              : `${b.review_count} reviews now${
+                                  b.rating === null ? '' : ` · ${b.rating}★`
+                                }`}
+                          </p>
+                          <p className="hint">Gained since joining: {b.reviews_gained ?? '—'}</p>
+                          <form onSubmit={onSetReviewCount} className="stack" style={{ gap: 6 }}>
+                            <input type="hidden" name="business_id" value={b.id} />
+                            <span className="row">
+                              <input
+                                name="review_count"
+                                type="number"
+                                min={0}
+                                step={1}
+                                defaultValue={b.review_count ?? ''}
+                                placeholder="Review count"
+                                aria-label={`Google review count for ${b.name}`}
+                                style={{ width: 110 }}
+                                required
+                              />
+                              <input
+                                name="rating"
+                                type="number"
+                                min={0}
+                                max={5}
+                                step={0.1}
+                                defaultValue={b.rating ?? ''}
+                                placeholder="Rating"
+                                aria-label={`Google rating for ${b.name}`}
+                                style={{ width: 80 }}
+                              />
+                            </span>
+                            <span className="row">
+                              <input
+                                name="snapshot_date"
+                                type="date"
+                                defaultValue={todayMelbourne()}
+                                aria-label={`Date of the review count for ${b.name}`}
+                              />
+                              <button className="ghost" type="submit">
+                                Save count
+                              </button>
+                            </span>
+                          </form>
+                        </td>
                         <td>
                           <span className="row">
                             <span>
@@ -579,8 +687,6 @@ export default function AdminScreen() {
                               <span className="pill">80%</span>
                             )}
                           </span>
-                        </td>
-                        <td>
                           <form onSubmit={onSetMonthlyCap} className="row">
                             <input type="hidden" name="business_id" value={b.id} />
                             <input
@@ -616,7 +722,11 @@ export default function AdminScreen() {
                             <button className="ghost" type="button" onClick={() => onSetStatus(b.id, 'trial')}>
                               Trial
                             </button>
-                            <button className="ghost" type="button" onClick={() => onViewAs(b.id, b.name)}>
+                            <button
+                              className="ghost"
+                              type="button"
+                              onClick={() => onViewAs(b.id, b.name, b.send_mode)}
+                            >
                               View
                             </button>
                             <button

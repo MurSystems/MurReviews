@@ -2,14 +2,21 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../supabase';
 import { config } from '../config';
 import MonthlyUsage from '../components/MonthlyUsage';
+import ReviewTrend from '../components/ReviewTrend';
 
 type Stats = {
-  reviews_gained: number;
-  rating: number | null;
-  review_count: number | null;
+  month_start: string;
+  texts_sent_this_month: number;
+  clicks_this_month: number;
+  click_rate_this_month: number;
   texts_sent: number;
   clicks: number;
   click_rate: number;
+  review_count: number | null;
+  rating: number | null;
+  starting_review_count: number | null;
+  reviews_gained: number | null;
+  last_snapshot_date: string | null;
 };
 
 type Snapshot = {
@@ -19,9 +26,45 @@ type Snapshot = {
 };
 
 function formatDay(iso: string): string {
-  const date = new Date(`${iso}T00:00:00`);
+  const date = new Date(iso.length === 10 ? `${iso}T00:00:00` : iso);
   if (Number.isNaN(date.getTime())) return iso;
   return date.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function percent(rate: number | null | undefined): string {
+  return `${Math.round((rate ?? 0) * 100)}%`;
+}
+
+function ratingLabel(rating: number | null): string {
+  if (rating === null) return '—';
+  return `${Number(rating).toFixed(1)}★`;
+}
+
+function gainedLabel(gained: number | null): string {
+  if (gained === null) return '—';
+  return gained > 0 ? `+${gained}` : String(gained);
+}
+
+function StatsRow({ stats, period }: { stats: Stats; period: 'month' | 'all' }) {
+  const sent = period === 'month' ? stats.texts_sent_this_month : stats.texts_sent;
+  const clicks = period === 'month' ? stats.clicks_this_month : stats.clicks;
+  const rate = period === 'month' ? stats.click_rate_this_month : stats.click_rate;
+  return (
+    <div className="stats">
+      <div className="stat">
+        <p className="stat-label">Texts sent</p>
+        <p className="stat-value">{sent}</p>
+      </div>
+      <div className="stat">
+        <p className="stat-label">Link clicks</p>
+        <p className="stat-value">{clicks}</p>
+      </div>
+      <div className="stat">
+        <p className="stat-label">Click rate</p>
+        <p className="stat-value">{percent(rate)}</p>
+      </div>
+    </div>
+  );
 }
 
 export default function Dashboard() {
@@ -57,7 +100,7 @@ export default function Dashboard() {
       });
   }, []);
 
-  const clickRate = stats ? Math.round((stats.click_rate ?? 0) * 100) : 0;
+  const hasReviews = stats !== null && stats.review_count !== null;
 
   return (
     <div className="page">
@@ -72,60 +115,61 @@ export default function Dashboard() {
 
       {stats && (
         <>
-          <div className="stats">
-            <div className="stat">
-              <p className="stat-label">Texts sent</p>
-              <p className="stat-value">{stats.texts_sent}</p>
-            </div>
-            <div className="stat">
-              <p className="stat-label">Clicks</p>
-              <p className="stat-value">{stats.clicks}</p>
-            </div>
-            <div className="stat">
-              <p className="stat-label">Click rate</p>
-              <p className="stat-value">{clickRate}%</p>
-            </div>
-          </div>
+          <section className="screen-section">
+            <h2>This month</h2>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Since {formatDay(stats.month_start)}. Test texts never count.
+            </p>
+            <StatsRow stats={stats} period="month" />
+          </section>
 
-          <section className="card screen-section" style={{ marginTop: 0 }}>
-            <h2>Reviews gained since you joined</h2>
-            {placesConnected === true ? (
+          <section className="screen-section">
+            <h2>All time</h2>
+            <StatsRow stats={stats} period="all" />
+          </section>
+
+          <section className="card screen-section">
+            <h2>Google reviews</h2>
+            {hasReviews ? (
               <>
-                <p className="stat-value" style={{ margin: 0 }}>
-                  {stats.reviews_gained}
-                </p>
-                <p className="muted" style={{ margin: 0 }}>
-                  Current rating {stats.rating ?? '—'} · {stats.review_count ?? 0} total reviews
-                </p>
+                <div className="stats" style={{ margin: 0 }}>
+                  <div className="stat">
+                    <p className="stat-label">Rating now</p>
+                    <p className="stat-value">{ratingLabel(stats.rating)}</p>
+                  </div>
+                  <div className="stat">
+                    <p className="stat-label">Reviews now</p>
+                    <p className="stat-value">{stats.review_count}</p>
+                  </div>
+                  <div className="stat">
+                    <p className="stat-label">Gained since joining</p>
+                    <p className="stat-value">{gainedLabel(stats.reviews_gained)}</p>
+                  </div>
+                </div>
+                {stats.starting_review_count !== null && (
+                  <p className="muted" style={{ margin: 0 }}>
+                    Started at {stats.starting_review_count} reviews.
+                  </p>
+                )}
               </>
             ) : (
               <p className="muted" style={{ margin: 0 }}>
-                {placesConnected === null
-                  ? 'Checking Google review tracking…'
-                  : 'Google review tracking not connected yet.'}
+                No Google review count yet.
               </p>
             )}
+            <p className="hint" style={{ margin: 0 }}>
+              {placesConnected === true
+                ? 'Google counts update automatically each day.'
+                : placesConnected === null
+                  ? 'Checking Google review tracking…'
+                  : 'Mur Systems adds the count until Google tracking is connected.'}
+            </p>
           </section>
 
-          {placesConnected === true && (
-            <section className="screen-section">
-              <h2>Reviews over time</h2>
-              {snapshots.length === 0 ? (
-                <p className="empty">No snapshots yet. We take one each day.</p>
-              ) : (
-                <ul className="list">
-                  {snapshots.map((s) => (
-                    <li key={s.snapshot_date}>
-                      <span className="item-title">{formatDay(s.snapshot_date)}</span>
-                      <span className="item-sub">
-                        {s.rating ?? '—'}★ · {s.review_count ?? 0} reviews
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          )}
+          <section className="screen-section">
+            <h2>Review count over time</h2>
+            <ReviewTrend snapshots={snapshots} />
+          </section>
         </>
       )}
     </div>

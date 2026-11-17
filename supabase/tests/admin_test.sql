@@ -3,7 +3,7 @@
 -- ============================================================================
 
 create extension if not exists pgtap with schema extensions;
-select plan(9);
+select plan(12);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-0000000000a1', 'owner@test.local'),
@@ -84,5 +84,27 @@ select throws_ok(
   $$select * from public.admin_create_business('X', 'p', 'Australia/Melbourne', 'log_only', 60, '00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000a1')$$,
   42501
 );
+
+-- 8. the admin listing, audit log, Places usage and the sender helper are not
+-- callable by an owner either.
+select throws_ok(
+  $$select * from public.admin_list_businesses()$$,
+  42501,
+  'permission denied for function admin_list_businesses',
+  'owner cannot list businesses'
+);
+select throws_ok(
+  $$select * from public.admin_get_audit()$$,
+  42501,
+  'permission denied for function admin_get_audit',
+  'owner cannot read the audit log'
+);
+select throws_ok(
+  $$select public.prepare_send('00000000-0000-0000-0000-0000000000d1', 'https://m.example')$$,
+  42501,
+  'permission denied for function prepare_send',
+  'owner cannot prepare a send'
+);
+reset role;
 
 select * from finish();

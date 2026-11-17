@@ -586,6 +586,21 @@ async function handleAdmin(
     }
     if (path === "/admin/businesses" && method === "POST") {
       const body = (await request.json()) as Record<string, any>;
+      const reviewCount =
+        body.review_count === undefined ||
+        body.review_count === null ||
+        body.review_count === ""
+          ? null
+          : Number(body.review_count);
+      if (
+        reviewCount !== null &&
+        (!Number.isInteger(reviewCount) || reviewCount < 0)
+      ) {
+        return Response.json(
+          { error: "Review count must be zero or more." },
+          { status: 400 },
+        );
+      }
       let ownerId = await supabaseRpc(env, "admin_find_owner", {
         p_email: body.owner_email,
       });
@@ -604,6 +619,7 @@ async function handleAdmin(
         p_delay_minutes: body.delay_minutes ?? 60,
         p_owner_id: ownerId,
         p_admin_id: userId,
+        p_review_count: reviewCount,
       });
       return Response.json({ ...(rows?.[0] ?? {}), login_link: loginLink });
     }
@@ -636,6 +652,58 @@ async function handleAdmin(
       await supabaseRpc(env, "admin_set_monthly_cap", {
         p_business_id: id,
         p_cap: cap,
+        p_admin_id: userId,
+      });
+      return Response.json({ ok: true });
+    }
+    if (
+      path.startsWith("/admin/businesses/") &&
+      path.endsWith("/review-count") &&
+      method === "POST"
+    ) {
+      const id = path.split("/")[3];
+      const body = (await request.json()) as Record<string, any>;
+      const count = Number(body.review_count);
+      if (!Number.isInteger(count) || count < 0) {
+        return Response.json(
+          { error: "Review count must be zero or more." },
+          { status: 400 },
+        );
+      }
+
+      const rawDate =
+        body.snapshot_date === undefined ||
+        body.snapshot_date === null ||
+        body.snapshot_date === ""
+          ? null
+          : String(body.snapshot_date);
+      if (rawDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+        return Response.json(
+          { error: "Choose a valid date for the review count." },
+          { status: 400 },
+        );
+      }
+
+      let rating: number | null = null;
+      if (
+        body.rating !== undefined &&
+        body.rating !== null &&
+        body.rating !== ""
+      ) {
+        rating = Number(body.rating);
+        if (!Number.isFinite(rating) || rating < 0 || rating > 5) {
+          return Response.json(
+            { error: "Rating must be between 0 and 5." },
+            { status: 400 },
+          );
+        }
+      }
+
+      await supabaseRpc(env, "admin_record_review_snapshot", {
+        p_business_id: id,
+        p_review_count: count,
+        p_snapshot_date: rawDate,
+        p_rating: rating,
         p_admin_id: userId,
       });
       return Response.json({ ok: true });

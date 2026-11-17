@@ -560,6 +560,67 @@ button:disabled {
   line-height: 1.1;
 }
 
+/* Review-count trend. The line uses --accent (ink in light, gold in dark);
+   gridlines and axis text stay recessive. */
+.chart {
+  position: relative;
+}
+
+.chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: pan-y;
+}
+
+.chart-tip {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.08);
+  pointer-events: none;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.chart-tip span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.chart-table {
+  margin-top: 6px;
+  font-size: 14px;
+}
+
+.chart-table summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.chart-table table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+}
+
+.chart-table th,
+.chart-table td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+
 .usage-line {
   margin: 0 0 8px;
 }
